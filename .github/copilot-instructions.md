@@ -127,7 +127,7 @@ Error messages must be actionable
 All external API calls can fail, handle gracefully
 PROJECT-SPECIFIC CONTEXT TO ALWAYS REMEMBER:
 
-Open WebUI runs on http://216.81.245.140:8080
+Open WebUI runs on http://YOUR_SERVER_URL (configure in config.py)
 We use environment variables from .env file
 Knowledge Base ID is required for RAG queries
 Audio recording uses sounddevice library

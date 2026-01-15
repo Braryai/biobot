@@ -7,7 +7,7 @@ import httpx
 import json
 from config import OPENWEBUI_URL, OPENWEBUI_TOKEN
 
-TOTALGPT_API_KEY = "sk-dOwBzdjuw0OWIgYAyytZoA"
+TOTALGPT_API_KEY = "your_totalgpt_api_key_here"
 
 print("\n" + "="*60)
 print("CONFIGURING TOTALGPT IN OPEN WEBUI")
@@ -116,6 +116,6 @@ except Exception as e:
 print("\n" + "="*60)
 print("DONE!")
 print("="*60)
-print("\nSi funcionó, actualiza config.py:")
+print("\nIf it worked, update config.py:")
 print("DEFAULT_MODEL = 'Qwen-Qwen3-30B-A3B'")
 print("="*60)

@@ -41,7 +41,7 @@ BioBot Voice Client enables hands-free interaction with your datacenter document
 - **Open WebUI**: Running instance with API access
 
 ### Required Services
-1. **Open WebUI** running at `http://216.81.245.140:8080` (provides the LLM)
+1. **Open WebUI** running at your server (provides the LLM)
 2. **Speech-to-Text** - Choose one:
    - **Local Whisper** ⭐ RECOMMENDED - Free, offline, private! (just `pip install faster-whisper`)
    - **Groq Whisper API** - Free (for now), requires internet
@@ -79,7 +79,7 @@ nano config.py  # or use your preferred editor
 
 ```python
 # Open WebUI Configuration
-OPENWEBUI_URL = "http://216.81.245.140:8080"  # Already set correctly
+OPENWEBUI_URL = "http://YOUR_SERVER_URL"  # Set your server URL
 OPENWEBUI_TOKEN = "sk-xxxxx..."  # Your API token from Open WebUI
 KNOWLEDGE_ID = "xxxxx-xxxxx-xxxxx"  # Your Knowledge Base ID
 
@@ -148,7 +148,7 @@ LOCAL_WHISPER_MODEL = "base"  # or "small" for better accuracy
 4. Paste key as `OPENAI_API_KEY`
 
 #### TotalGPT API Key (optional, for Text-to-Speech)
-1. Your key is already configured: `sk-dOwBzdjuw0OWIgYAyytZoA`
+1. Get your key from TotalGPT
 2. Set `USE_TTS = True` in config.py to enable spoken responses
 3. Customize voice with `TTS_VOICE` (e.g., "af_bella", "am_adam")
 
@@ -168,7 +168,7 @@ You should see:
 ============================================================
 
 🔗 Testing connection to Open WebUI...
-   URL: http://216.81.245.140:8080
+   URL: http://YOUR_SERVER_URL
 ✓ Connected to Open WebUI successfully!
 
 ============================================================
@@ -233,7 +233,7 @@ You should see:
 
 🔄 Sending query to Open WebUI...
    Using Knowledge Base: abc123-def456-ghi789
-   API endpoint: http://216.81.245.140:8080/api/chat/completions
+   API endpoint: http://YOUR_SERVER_URL/api/chat/completions
 ✓ Received response from Open WebUI
 
 ============================================================
@@ -293,7 +293,7 @@ You can customize shortcuts in `config.py`:
 ```
 
 **Solutions:**
-1. Verify Open WebUI is running: `curl http://216.81.245.140:8080/api/config`
+1. Verify Open WebUI is running: `curl http://YOUR_SERVER_URL/api/config`
 2. Check the URL in `config.py` matches your Open WebUI instance
 3. Verify your API token is valid (regenerate if needed)
 4. Check firewall/network settings
@@ -439,7 +439,7 @@ MAX_RECORDING_DURATION = 120  # 2 minutes
 
 The client uses the following endpoint:
 ```
-POST http://216.81.245.140:8080/api/chat/completions
+POST http://YOUR_SERVER_URL/api/chat/completions
 ```
 
 **Request format:**

@@ -83,7 +83,7 @@ AUDIO_CHANNELS = 1         # Same
 MAX_RECORDING_DURATION = 60  # Same
 
 # Add new Open WebUI settings
-OPENWEBUI_URL = "http://216.81.245.140:8080"
+OPENWEBUI_URL = "http://YOUR_SERVER_URL"
 OPENWEBUI_TOKEN = "sk-xxxxx..."  # Get from Open WebUI
 KNOWLEDGE_ID = "xxxxx..."        # Get from Open WebUI
 DEFAULT_MODEL = "llama3.1:8b"
@@ -97,7 +97,7 @@ GROQ_API_KEY = ""
 
 #### Get API Token
 
-1. Open http://216.81.245.140:8080 in browser
+1. Open http://YOUR_SERVER_URL in browser
 2. Click **Settings** (gear icon)
 3. Go to **Account** tab
 4. Click **API Keys**
@@ -119,7 +119,7 @@ GROQ_API_KEY = ""
 
 ```bash
 # Test that Open WebUI is accessible
-curl http://216.81.245.140:8080/api/config
+curl http://YOUR_SERVER_URL/api/config
 
 # Should return JSON config
 ```
@@ -141,7 +141,7 @@ You should see:
 ============================================================
 
 🔗 Testing connection to Open WebUI...
-   URL: http://216.81.245.140:8080
+   URL: http://YOUR_SERVER_URL
 ✓ Connected to Open WebUI successfully!
 
 ============================================================
@@ -171,7 +171,7 @@ You should see:
 **Solutions:**
 ```bash
 # Check if Open WebUI is running
-curl http://216.81.245.140:8080
+curl http://YOUR_SERVER_URL
 
 # If not accessible, check:
 # 1. Is the server running?

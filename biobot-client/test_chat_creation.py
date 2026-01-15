@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-OPENWEBUI_URL = os.getenv("OPENWEBUI_URL", "http://216.81.245.140:8080")
+OPENWEBUI_URL = os.getenv("OPENWEBUI_URL", "http://YOUR_SERVER_URL")
 OPENWEBUI_TOKEN = os.getenv("OPENWEBUI_TOKEN")
 
 print("\n" + "="*60)
@@ -123,6 +123,6 @@ except Exception as e:
     print(f"   Error: {e}")
 
 print("\n" + "="*60)
-print("Go check: http://216.81.245.140:8080")
+print("Go check your Open WebUI server")
 print("The chat should appear in Workspace → Chats")
 print("="*60)

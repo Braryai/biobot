@@ -22,7 +22,7 @@ Mobile App / Smart Glasses
          ↓
     BioBot API (this directory)
          ↓
-    Open WebUI (216.81.245.140:8080)
+    Open WebUI (YOUR_SERVER_URL)
          ↓
     Knowledge Base
 ```

@@ -50,7 +50,7 @@ BioBot/
 
 | Component | Old (macPerplex) | New (BioBot) |
 |-----------|------------------|--------------|
-| **Backend** | Perplexity.ai | Open WebUI (216.81.245.140:8080) |
+| **Backend** | Perplexity.ai | Open WebUI (YOUR_SERVER_URL) |
 | **Connection Method** | Selenium + Chrome WebDriver | Direct HTTP API (httpx) |
 | **Browser Required** | Yes (Chrome with debugging) | No |
 | **Knowledge Source** | Perplexity general knowledge | RAG with datacenter docs |
@@ -184,7 +184,7 @@ You need to configure these in `biobot-client/config.py`:
 
 ```python
 # Open WebUI Configuration
-OPENWEBUI_URL = "http://216.81.245.140:8080"  # ✅ Already set correctly!
+OPENWEBUI_URL = "http://YOUR_SERVER_URL"  # ✅ Set your server URL
 OPENWEBUI_TOKEN = "sk-xxxxx..."  # ⚠️ YOU NEED TO SET THIS
 KNOWLEDGE_ID = "xxxxx..."        # ⚠️ YOU NEED TO SET THIS
 
@@ -198,7 +198,7 @@ OPENAI_API_KEY = "sk-xxxxx..."   # ⚠️ YOU NEED TO SET THIS
 ### How to Get Credentials
 
 **1. Open WebUI API Token:**
-- Open: http://216.81.245.140:8080
+- Open: http://YOUR_SERVER_URL
 - Go to: Settings → Account → API Keys
 - Click: Create new secret key
 - Copy the token (starts with "sk-")
@@ -229,7 +229,7 @@ nano config.py  # Add your credentials
 
 ```bash
 # Test Open WebUI
-curl http://216.81.245.140:8080/api/config
+curl http://YOUR_SERVER_URL/api/config
 
 # Should return JSON with Open WebUI config
 ```
@@ -291,7 +291,7 @@ python3 biobot_voice.py
 
 **Open WebUI Chat Completions API:**
 ```
-POST http://216.81.245.140:8080/api/chat/completions
+POST http://YOUR_SERVER_URL/api/chat/completions
 
 Headers:
   Authorization: Bearer {token}
@@ -358,7 +358,7 @@ All documentation is comprehensive and ready to use:
 Before first use, verify:
 
 - [ ] Python 3.11+ installed
-- [ ] Open WebUI accessible at http://216.81.245.140:8080
+- [ ] Open WebUI accessible at your server URL
 - [ ] Dependencies installed (`pip install -r requirements.txt`)
 - [ ] config.py created and configured
 - [ ] OPENWEBUI_TOKEN set

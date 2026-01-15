@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-OPENWEBUI_URL = os.getenv("OPENWEBUI_URL", "http://216.81.245.140:8080")
+OPENWEBUI_URL = os.getenv("OPENWEBUI_URL", "http://YOUR_SERVER_URL")
 OPENWEBUI_TOKEN = os.getenv("OPENWEBUI_TOKEN")
 
 def inspect_endpoint(url, method="GET", data=None):
@@ -101,6 +101,6 @@ for model_name in test_models:
 print("\n" + "="*60)
 print("SUMMARY:")
 print("="*60)
-print("\n¿Encontraste algún modelo en las respuestas arriba?")
-print("Si sí, úsalo en config.py como DEFAULT_MODEL")
+print("\nDid you find any model in the responses above?")
+print("If yes, use it in config.py as DEFAULT_MODEL")
 print("="*60)

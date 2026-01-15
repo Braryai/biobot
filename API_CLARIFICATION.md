@@ -8,7 +8,7 @@ BioBot uses **three separate APIs** for different purposes. Here's what each one
 
 ## 🎯 API Roles
 
-### 1️⃣ Open WebUI (216.81.245.140:8080)
+### 1️⃣ Open WebUI (YOUR_SERVER_URL)
 **Role:** Your AI Brain 🧠
 
 **What it does:**
@@ -24,7 +24,7 @@ BioBot uses **three separate APIs** for different purposes. Here's what each one
 - Context-aware responses using RAG
 
 **API Key:** `OPENWEBUI_TOKEN`  
-**Endpoint:** `http://216.81.245.140:8080/api/chat/completions`
+**Endpoint:** `http://YOUR_SERVER_URL/api/chat/completions`
 
 ---
 
@@ -66,7 +66,7 @@ BioBot uses **three separate APIs** for different purposes. Here's what each one
 - ❌ Does NOT transcribe audio
 - ❌ Does NOT run the LLM
 
-**API Key:** `TOTALGPT_API_KEY` = `sk-dOwBzdjuw0OWIgYAyytZoA`  
+**API Key:** `TOTALGPT_API_KEY` = `your_totalgpt_api_key_here`  
 **Endpoint:** `https://api.totalgpt.ai/v1/audio/speech`  
 **When used:** After receiving response from Open WebUI (if `USE_TTS = True`)
 
@@ -151,7 +151,7 @@ GROQ_API_KEY = "gsk_xxxxx..."
 ### Option 3: Enable TTS
 ```python
 USE_TTS = True
-TOTALGPT_API_KEY = "sk-dOwBzdjuw0OWIgYAyytZoA"
+TOTALGPT_API_KEY = "your_totalgpt_api_key_here"
 TTS_VOICE = "af_bella"
 ```
 

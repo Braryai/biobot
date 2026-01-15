@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configuration
-OPENWEBUI_URL = os.getenv("OPENWEBUI_URL", "http://216.81.245.140:8080")
+OPENWEBUI_URL = os.getenv("OPENWEBUI_URL", "http://YOUR_SERVER_URL")
 OPENWEBUI_TOKEN = os.getenv("OPENWEBUI_TOKEN")
 
 if not OPENWEBUI_TOKEN:
@@ -83,7 +83,7 @@ for endpoint in endpoints_to_try:
 
 # Test 3: Get TotalGPT models directly
 print("\n3. Fetching models from TotalGPT...")
-totalgpt_token = "sk-dOwBzdjuw0OWIgYAyytZoA"
+totalgpt_token = "your_totalgpt_api_key_here"
 
 totalgpt_models = []
 try:
@@ -98,7 +98,7 @@ try:
             print(f"   ✓ TotalGPT API accessible!")
             print(f"   Available models ({len(totalgpt_models)} total):")
             
-            # Buscar el modelo Qwen específico
+            # Search for the specific Qwen model
             for model in totalgpt_models:
                 model_id = model.get('id', '')
                 if 'Qwen' in model_id or 'qwen' in model_id:
@@ -121,7 +121,7 @@ test_formats = [
     f"openai/{configured_model}",
 ]
 
-# También probar los modelos que encontramos en TotalGPT
+# Also test the models we found in TotalGPT
 for model in totalgpt_models:
     model_id = model.get('id', '')
     if 'Qwen' in model_id and 'A3B' in model_id:
@@ -140,7 +140,7 @@ for test_model in test_formats:
             
             payload = {
                 "model": test_model,
-                "messages": [{"role": "user", "content": "Di solo 'ok'"}],
+                "messages": [{"role": "user", "content": "Say just 'ok'"}],
                 "stream": False
             }
             
@@ -183,26 +183,26 @@ print("DIAGNOSIS:")
 print("="*60)
 
 if model_found:
-    print("\n✅ MODELO FUNCIONANDO!")
-    print("Copia el nombre del modelo marcado con ★★★ arriba")
-    print("y actualiza DEFAULT_MODEL en config.py")
+    print("\n✅ MODEL WORKING!")
+    print("Copy the model name marked with ★★★ above")
+    print("and update DEFAULT_MODEL in config.py")
 elif found_models:
-    print("\n⚠️ Se encontraron modelos en Open WebUI pero ninguno funcionó")
-    print("Prueba uno de los modelos listados arriba manualmente")
+    print("\n⚠️ Models found in Open WebUI but none worked")
+    print("Try one of the models listed above manually")
 else:
-    print("\n❌ El modelo configurado no funciona.")
-    print("\nPosibles soluciones:")
-    print("\n1. VERIFICA LA CONFIGURACIÓN EN OPEN WEBUI:")
-    print("   - URL: https://api.totalgpt.ai/v1 (CON /v1)")
-    print("   - Model IDs: déjalo VACÍO (que detecte automáticamente)")
-    print("   - Prefix ID: déjalo VACÍO")
-    print("   - Save y espera 10 segundos")
-    print("\n2. REINICIA OPEN WEBUI:")
+    print("\n❌ The configured model doesn't work.")
+    print("\nPossible solutions:")
+    print("\n1. VERIFY CONFIGURATION IN OPEN WEBUI:")
+    print("   - URL: https://api.totalgpt.ai/v1 (WITH /v1)")
+    print("   - Model IDs: leave EMPTY (auto-detect)")
+    print("   - Prefix ID: leave EMPTY")
+    print("   - Save and wait 10 seconds")
+    print("\n2. RESTART OPEN WEBUI:")
     print("   docker restart open-webui")
-    print("\n3. ALTERNATIVA DIRECTA:")
-    print("   - Puedo configurar BioBot para usar TotalGPT directamente")
-    print("   - Sin pasar por Open WebUI")
-    print("   - Más simple y directo")
-    print("   - ¿Quieres que haga esto?")
+    print("\n3. DIRECT ALTERNATIVE:")
+    print("   - Can configure BioBot to use TotalGPT directly")
+    print("   - Without going through Open WebUI")
+    print("   - Simpler and more direct")
+    print("   - Want me to do this?")
 
 print("="*60)

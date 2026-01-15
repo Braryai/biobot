@@ -10,9 +10,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-OPENWEBUI_URL = os.getenv("OPENWEBUI_URL", "http://216.81.245.140:8080")
+OPENWEBUI_URL = os.getenv("OPENWEBUI_URL", "http://YOUR_SERVER_URL")
 OPENWEBUI_TOKEN = os.getenv("OPENWEBUI_TOKEN")
-TOTALGPT_API_KEY = "sk-dOwBzdjuw0OWIgYAyytZoA"
+TOTALGPT_API_KEY = "your_totalgpt_api_key_here"
 
 if not OPENWEBUI_TOKEN:
     print("Error: OPENWEBUI_TOKEN not found in .env file")
@@ -107,17 +107,17 @@ except Exception as e:
 print("\n" + "="*60)
 print("NEXT STEPS:")
 print("="*60)
-print("\n1. Si esto no funcionó, debes agregar el endpoint manualmente:")
-print("   a. Ve a: http://216.81.245.140:8080")
-print("   b. Haz login")
+print("\n1. If this didn't work, you must add the endpoint manually:")
+print("   a. Go to: http://YOUR_SERVER_URL")
+print("   b. Login")
 print("   c. Settings → Connections → Add Connection")
-print("   d. Tipo: OpenAI API")
+print("   d. Type: OpenAI API")
 print("   e. Name: TotalGPT")
 print("   f. URL: https://api.totalgpt.ai/v1")
-print("   g. API Key: sk-dOwBzdjuw0OWIgYAyytZoA")
-print("   h. Guardar y refrescar")
-print("\n2. Una vez agregado, los modelos aparecerán con prefijo")
-print("   Ejemplo: 'totalgpt/TheDrummer-Anubis-70B-v1-FP8-Dynamic'")
-print("\n3. O puedes llamar directamente sin que aparezca en la lista")
-print("   usando el model ID completo desde TotalGPT")
+print("   g. API Key: your_totalgpt_api_key_here")
+print("   h. Save and refresh")
+print("\n2. Once added, models will appear with prefix")
+print("   Example: 'totalgpt/TheDrummer-Anubis-70B-v1-FP8-Dynamic'")
+print("\n3. Or you can call directly without it appearing in list")
+print("   using the full model ID from TotalGPT")
 print("="*60)

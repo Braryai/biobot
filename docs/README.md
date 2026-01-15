@@ -34,7 +34,7 @@ docs/
 
 ## Uploading to Knowledge Base
 
-1. Log into Open WebUI at http://216.81.245.140:8080
+1. Log into Open WebUI at your server URL
 2. Go to **Workspace** → **Knowledge**
 3. Select your datacenter knowledge base (or create one)
 4. Upload documentation files

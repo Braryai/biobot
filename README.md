@@ -1,8 +1,8 @@
-# 🤖 BioBot - Datacenter Voice Assistant
+# BioBot - Datacenter Voice Assistant
 
 A complete voice-controlled AI assistant system for datacenter technicians using smart glasses or mobile devices. BioBot enables hands-free access to technical documentation through Open WebUI with RAG (Retrieval-Augmented Generation).
 
-## 🎯 Project Overview
+## Project Overview
 
 BioBot allows datacenter technicians to:
 - Ask questions hands-free while working with equipment
@@ -42,7 +42,7 @@ BioBot/
 
 ### Prerequisites
 
-1. **Open WebUI** instance running at `http://216.81.245.140:8080`
+1. **Open WebUI** instance running (configure URL in config.py)
 2. **Python 3.11+** installed on macOS
 3. **Speech-to-Text API key** - Choose one:
    - OpenAI Whisper API (recommended), OR
@@ -71,7 +71,7 @@ BioBot/
    ```
 
    Update these values:
-   - `OPENWEBUI_URL` = `"http://216.81.245.140:8080"`
+   - `OPENWEBUI_URL` = Your Open WebUI server URL
    - `OPENWEBUI_TOKEN` = Your API token from Open WebUI
    - `KNOWLEDGE_ID` = Your Knowledge Base ID
    - `OPENAI_API_KEY` = Your OpenAI API key (for STT only!)
@@ -87,7 +87,7 @@ BioBot/
 ### Getting API Credentials
 
 #### Open WebUI Token
-1. Open http://216.81.245.140:8080
+1. Open your Open WebUI instance in browser
 2. Settings → Account → API Keys
 3. Create new secret key → Copy
 
@@ -160,7 +160,7 @@ See `biobot-client/README.md` for detailed configuration options.
 **Essential Settings:**
 ```python
 # Open WebUI (your LLM server)
-OPENWEBUI_URL = "http://216.81.245.140:8080"
+OPENWEBUI_URL = "http://YOUR_SERVER_URL"
 OPENWEBUI_TOKEN = "sk-xxxxx..."
 KNOWLEDGE_ID = "your-kb-id"
 DEFAULT_MODEL = "llama3.1:8b"
@@ -171,13 +171,13 @@ USE_GROQ_STT = False  # Set True for Groq (faster/cheaper)
 
 # Text-to-Speech (optional, speaks responses)
 USE_TTS = False  # Set True to enable
-TOTALGPT_API_KEY = "sk-dOwBzdjuw0OWIgYAyytZoA"
+TOTALGPT_API_KEY = "your_totalgpt_api_key_here"
 ```
 
 ## 🛠️ Troubleshooting
 
 **Cannot connect to Open WebUI:**
-- Verify server is running: `curl http://216.81.245.140:8080`
+- Verify server is running: `curl http://YOUR_SERVER_URL`
 - Check URL and token in config.py
 
 **No audio recording:**

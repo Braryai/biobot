@@ -7,7 +7,7 @@
 # Open WebUI Configuration
 # ============================================================================
 # Open WebUI server URL (no trailing slash)
-OPENWEBUI_URL = "http://216.81.245.140:8080"
+OPENWEBUI_URL = "http://YOUR_SERVER_IP:PORT"
 
 # Open WebUI API token
 # Get from: Settings > Account > API Keys in Open WebUI
@@ -60,7 +60,7 @@ USE_TTS = False
 
 # TotalGPT API Key for Text-to-Speech
 # Get from: https://api.totalgpt.ai
-TOTALGPT_API_KEY = "sk-dOwBzdjuw0OWIgYAyytZoA"
+TOTALGPT_API_KEY = "your_totalgpt_api_key_here"
 
 # TTS Voice Selection
 # Available voices: af_bella, af_nicole, af_sarah, af_sky, am_adam, am_michael, etc.

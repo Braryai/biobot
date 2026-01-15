@@ -7,7 +7,7 @@ I have a voice-controlled datacenter assistant called **BioBot** that uses Open 
 1. Captures audio from technicians wearing smart glasses
 2. Transcribes speech using local Whisper
 3. Optionally captures screenshots (base64 PNG images, ~500KB each)
-4. Sends queries to Open WebUI via API at `http://216.81.245.140:8080`
+4. Sends queries to Open WebUI via API at your configured server
 5. Uses two models:
    - `Llama-3.2-11B-Vision-Instruct` (for queries WITH screenshots)
    - `Qwen-Qwen3-30B-A3B` (for text-only queries)
@@ -247,7 +247,7 @@ POST /api/chat/completions
 ## ADDITIONAL CONTEXT
 
 - Open WebUI version: 0.6.43
-- Deployment: Single server at http://216.81.245.140:8080
+- Deployment: Single server configured in config.py
 - Users: Datacenter technicians using smart glasses
 - Use case: Hands-free troubleshooting with visual context
 - Critical: Images must be preserved for audit trail
