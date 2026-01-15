@@ -1,28 +1,27 @@
 # BioBot
 
-A voice-controlled AI assistant for datacenter technicians enabling hands-free access to technical documentation through Open WebUI with RAG (Retrieval-Augmented Generation).
+Voice-controlled AI assistant with OpenWebUI integration for frontend. Capture screenshots and ask questions using voice commands.
 
 ## Overview
 
-BioBot provides datacenter technicians with instant, hands-free access to technical documentation while working with equipment. Using push-to-talk voice commands and optional screenshot capture, technicians can query knowledge bases and receive accurate responses with source citations.
+BioBot enables hands-free interaction with AI models through voice commands and screenshot capture. Built for datacenter technicians and field workers who need instant access to technical information while working with equipment.
 
 **Key Features:**
-- Push-to-talk voice recording with visual feedback
-- Smart window or full-screen screenshot capture
-- Speech-to-text transcription (OpenAI Whisper or Groq)
-- Direct Open WebUI API integration with RAG support
-- Vision model support for screenshot analysis
-- Conversation history management
-- Optional text-to-speech responses
+- Push-to-talk voice recording
+- Automatic screenshot capture
+- Speech-to-text transcription
+- OpenWebUI integration with RAG support
+- Vision model support for image analysis
+- Conversation history
 - Configurable keyboard shortcuts
 
 ## Installation
 
 ### Prerequisites
 
-- macOS (tested on Monterey and later)
-- Python 3.11 or higher
-- Open WebUI instance with accessible API
+- macOS (Monterey or later)
+- Python 3.11+
+- Open WebUI instance
 - Microphone and screen recording permissions
 
 ### Quick Start
@@ -44,16 +43,12 @@ cp config.py.example config.py
 nano config.py
 ```
 
-Required configuration:
-- `OPENWEBUI_URL`: Your Open WebUI server URL
-- `OPENWEBUI_TOKEN`: API token from Open WebUI
-- `OPENAI_API_KEY`: For speech-to-text transcription
+Edit `config.py` with your credentials:
+- `OPENWEBUI_URL`: Your server URL
+- `OPENWEBUI_TOKEN`: Your API token
+- `OPENAI_API_KEY`: Your STT API key
 
-Optional configuration:
-- `KNOWLEDGE_ID`: Knowledge base ID for RAG queries
-- `DEFAULT_MODEL`: Model to use for queries
-- `USE_GROQ_STT`: Enable Groq for faster/cheaper transcription
-- `USE_TTS`: Enable text-to-speech responses
+See `config.py.example` for all available options.
 
 4. Run BioBot:
 ```bash
@@ -65,168 +60,78 @@ python biobot_voice.py
 
 ### Basic Operation
 
-BioBot operates in two modes activated by keyboard shortcuts:
+Two modes activated by keyboard shortcuts:
 
-**Mode 1: Voice + Screenshot** (Default: Right Cmd)
-1. Press and hold the trigger key
+**Voice + Screenshot Mode** (Default: Right Cmd)
+1. Press and hold trigger key
 2. Speak your question
-3. Release the key to process
-4. Screenshot is automatically captured
-5. Response displays with citations
+3. Release to process
+4. Screenshot captured automatically
 
-**Mode 2: Voice Only** (Default: Right Shift)
-1. Press and hold the trigger key
+**Voice Only Mode** (Default: Right Shift)
+1. Press and hold trigger key
 2. Speak your question
-3. Release the key to process
-4. No screenshot captured
-
-### Example Queries
-
-**With Screenshot:**
-- "What is this component?"
-- "How do I configure this switch?"
-- "What cables should I use for this setup?"
-
-**Without Screenshot:**
-- "What is the procedure for server maintenance?"
-- "Show me the cable color codes for VLANs"
-- "What are the power requirements for rack 12?"
+3. Release to process
 
 ### Keyboard Shortcuts
 
-Default shortcuts (configurable in `config.py`):
-- `cmd_r`: Voice + Screenshot mode
-- `shift_r`: Voice only mode
-- `cmd+r` (during recording): Reset conversation
+Configurable in `config.py`:
+- `cmd_r`: Voice + Screenshot
+- `shift_r`: Voice only
+- `cmd+r` during recording: Reset conversation
 
 ## Configuration
 
+All settings are in `config.py`. Copy from `config.py.example` and update:
 
-### Open WebUI Setup
-
-1. Access your Open WebUI instance
-2. Navigate to Settings → Account → API Keys
-3. Generate a new API key
-4. Copy the key to `OPENWEBUI_TOKEN` in config.py
-
-### Knowledge Base Setup
-
-1. In Open WebUI, go to Workspace → Knowledge
-2. Create or select your datacenter knowledge base
-3. Upload technical documentation
-4. Copy the knowledge base ID to `KNOWLEDGE_ID` in config.py
-
-### Speech-to-Text Options
-
-**Option 1: OpenAI Whisper** (Recommended)
+**Required:**
 ```python
-USE_LOCAL_WHISPER = False
-OPENAI_API_KEY = "your-api-key"
+OPENWEBUI_URL = "http://your-server-url"
+OPENWEBUI_TOKEN = "your-token-here"
+OPENAI_API_KEY = "your-key-here"
 ```
 
-**Option 2: Groq** (Faster/Cheaper)
+**Optional:**
 ```python
-USE_GROQ_STT = True
-GROQ_API_KEY = "your-api-key"
+KNOWLEDGE_ID = "your-kb-id"
+DEFAULT_MODEL = "llama3.1:8b"
+USE_GROQ_STT = False
+USE_TTS = False
 ```
 
-**Option 3: Local Whisper** (Offline/Free)
-```python
-USE_LOCAL_WHISPER = True
-LOCAL_WHISPER_MODEL = "base"
-```
+See `config.py.example` for complete documentation.
 
-### Text-to-Speech (Optional)
-
-Enable spoken responses:
-```python
-USE_TTS = True
-TOTALGPT_API_KEY = "your-api-key"
-TTS_VOICE = "af_bella"
-```
 
 ## Architecture
 
 ```
-┌─────────────────┐
-│   Technician    │
-│  (Smart Glasses)│
-└────────┬────────┘
-         │
-         │ Voice Command
-         │ Screenshot
-         ▼
-┌─────────────────┐
-│  BioBot Client  │
-│    (macOS)      │
-│                 │
-│  • Audio Record │
-│  • Screenshot   │
-│  • STT          │
-│  • TTS          │
-└────────┬────────┘
-         │
-         │ API Call
-         ▼
-┌─────────────────┐
-│   Open WebUI    │
-│                 │
-│  • LLM Models   │
-│  • RAG/KB       │
-│  • Chat History │
-└────────┬────────┘
-         │
-         │ Knowledge Retrieval
-         ▼
-┌─────────────────┐
-│  Knowledge Base │
-│                 │
-│  • Datacenter   │
-│    Documentation│
-└─────────────────┘
+Voice Input → STT → OpenWebUI API → LLM Response
+Screenshot → Upload → Vision Model Analysis
 ```
 
 ## API Integration
 
-BioBot integrates with Open WebUI using the following endpoints:
-
-- `POST /api/chat/completions` - Send queries to models
+Uses OpenWebUI REST API:
+- `POST /api/chat/completions` - Send queries
 - `POST /api/v1/files/` - Upload screenshots
-- `GET /api/v1/chats/{id}` - Retrieve chat history
-- `POST /api/v1/chats/{id}` - Save messages with attachments
-- `GET /api/models` - Fetch available models
+- `GET /api/v1/chats/{id}` - Retrieve history
+- `POST /api/v1/chats/{id}` - Save messages
+- `GET /api/models` - List models
 
 ## Troubleshooting
 
+**Connection Issues:**
+- Verify OpenWebUI is running
+- Check `OPENWEBUI_URL` and `OPENWEBUI_TOKEN` in config.py
+- Test connection: `python test_openwebui.py`
 
-### Connection Issues
-
-**"Could not connect to Open WebUI"**
-- Verify Open WebUI is running
-- Check `OPENWEBUI_URL` in config.py
-- Validate `OPENWEBUI_TOKEN` is correct
-- Test: `curl http://YOUR_SERVER_URL/api/config`
-
-### Model Issues
-
-**"Model not found"**
-- Verify model exists: `python list_models.py`
-- Check model name in `DEFAULT_MODEL`
-- Ensure TotalGPT or Ollama endpoint is configured in Open WebUI
-
-### Audio Issues
-
-**"No audio recorded"**
+**Audio Issues:**
 - Grant microphone permissions to Terminal
-- Check audio input device in System Preferences
-- Adjust `AUDIO_SAMPLE_RATE` if needed
+- Check System Preferences audio input device
 
-### Screenshot Issues
-
-**"Screenshot capture failed"**
+**Screenshot Issues:**
 - Grant screen recording permissions to Terminal
-- Verify focused window exists
-- Falls back to full screen automatically
+- Verify window focus exists
 
 ## Development
 
@@ -234,36 +139,28 @@ BioBot integrates with Open WebUI using the following endpoints:
 
 ```
 biobot/
-├── biobot-client/          # Main voice client
-│   ├── biobot_voice.py     # Core client implementation
+├── biobot-client/          # Voice client
+│   ├── biobot_voice.py     # Main implementation
 │   ├── config.py.example   # Configuration template
-│   ├── requirements.txt    # Python dependencies
-│   └── README.md          # Client-specific documentation
+│   └── requirements.txt    # Dependencies
 ├── biobot-api/            # API services (future)
-├── shared/                # Shared utilities (future)
-└── docs/                  # Additional documentation
+└── docs/                  # Documentation
 ```
 
-### Running Tests
+### Testing
 
 ```bash
 cd biobot-client
-python test_openwebui.py  # Test Open WebUI connection
-python list_models.py     # List available models
+python test_openwebui.py  # Test connection
+python list_models.py     # List models
 ```
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- [Open WebUI](https://github.com/open-webui/open-webui) for the LLM interface
-- [OpenAI Whisper](https://github.com/openai/whisper) for speech recognition
-- [TotalGPT](https://totalgpt.ai) for API services
+MIT License - see [LICENSE](LICENSE) file.
 
 ## Support
 
-For issues, questions, or contributions, please visit the [GitHub repository](https://github.com/Braryai/biobot).
+Visit the [GitHub repository](https://github.com/Braryai/biobot) for issues and contributions.
 
 
