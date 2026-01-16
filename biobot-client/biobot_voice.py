@@ -850,6 +850,50 @@ def display_response(response: Dict[str, Any]):
 CONVERSATION_HISTORY = []  # Text-only for API calls to avoid huge payloads
 CURRENT_CHAT_ID = None  # Open WebUI chat ID for frontend display
 MODIFIER_KEYS_PRESSED = set()  # Track which modifier keys are currently pressed
+TRIGGER_KEYS_PRESSED = set()  # Track which trigger keys are currently pressed
+SYSTEM_PROMPT = None  # Optional system prompt for chats
+
+
+def delete_last_message():
+    """Delete the last message from conversation history."""
+    global CONVERSATION_HISTORY
+    
+    if len(CONVERSATION_HISTORY) >= 2:
+        # Remove last assistant and user message
+        CONVERSATION_HISTORY = CONVERSATION_HISTORY[:-2]
+        print("\n" + "="*60)
+        print("Ctrl+Key1: Last message deleted")
+        print("="*60 + "\n")
+        play_beep(frequency=600, duration=0.1)
+    else:
+        print("\n" + "="*60)
+        print("Ctrl+Key1: No messages to delete")
+        print("="*60 + "\n")
+        play_beep(frequency=300, duration=0.2)
+
+
+def create_new_chat():
+    """Create a new chat (reset conversation)."""
+    global CONVERSATION_HISTORY, CURRENT_CHAT_ID
+    
+    CONVERSATION_HISTORY = []
+    CURRENT_CHAT_ID = None
+    
+    print("\n" + "="*60)
+    print("Alt+Key1: New chat created")
+    print("="*60 + "\n")
+    play_beep(frequency=1000, duration=0.1)
+
+
+def configure_system_prompt():
+    """Placeholder for system prompt configuration via voice."""
+    global SYSTEM_PROMPT
+    
+    print("\n" + "="*60)
+    print("Alt+Key2: System Prompt Configuration")
+    print("Feature coming soon - will capture voice prompt")
+    print("="*60 + "\n")
+    play_beep(frequency=800, duration=0.1)
 
 def process_query(audio_path: str, capture_screenshot_flag: bool, use_region_selection: bool = False):
     """Process the complete workflow: transcribe, optionally screenshot, query, display.
@@ -1035,7 +1079,7 @@ def on_press(key, recorder, trigger_key_screenshot=None, trigger_key_audio=None)
         trigger_key_screenshot: Key for screenshot+audio mode
         trigger_key_audio: Key for audio-only mode
     """
-    global MODIFIER_KEYS_PRESSED
+    global MODIFIER_KEYS_PRESSED, TRIGGER_KEYS_PRESSED, CONVERSATION_HISTORY, CURRENT_CHAT_ID
     
     # Use config defaults if not provided
     key1 = trigger_key_screenshot or TRIGGER_KEY_WITH_SCREENSHOT
@@ -1045,59 +1089,99 @@ def on_press(key, recorder, trigger_key_screenshot=None, trigger_key_audio=None)
     trigger_map = get_trigger_key_map(key1, key2)
     
     try:
-        # Check for Escape key to reset conversation
         from pynput.keyboard import Key
         
-        # Track modifier keys
+        # Track modifier keys (only actual modifiers, not triggers)
         if key in (Key.cmd, Key.cmd_r, Key.cmd_l):
             MODIFIER_KEYS_PRESSED.add('cmd')
+            return  # Don't process modifier keys as triggers
         elif key in (Key.shift, Key.shift_r, Key.shift_l):
             MODIFIER_KEYS_PRESSED.add('shift')
+            return
         elif key in (Key.alt, Key.alt_r, Key.alt_l):
             MODIFIER_KEYS_PRESSED.add('alt')
+            return
         elif key in (Key.ctrl, Key.ctrl_r, Key.ctrl_l):
             MODIFIER_KEYS_PRESSED.add('ctrl')
+            return
         
+        # ESC = Reset conversation
         if key == Key.esc:
             if CONVERSATION_HISTORY or CURRENT_CHAT_ID:
                 print("\n" + "="*60)
-                print("CONVERSATION RESET - Starting fresh...")
+                print("ESC: Conversation reset - Starting fresh...")
                 print("="*60 + "\n")
                 CONVERSATION_HISTORY = []
                 CURRENT_CHAT_ID = None
             return
         
-        # Check for screenshot + audio trigger
-        if check_key_match(key, key1, trigger_map):
-            if not recorder.is_recording:
-                # Check if Cmd+Shift for region selection
-                if 'cmd' in MODIFIER_KEYS_PRESSED and 'shift' in MODIFIER_KEYS_PRESSED:
-                    print("\n" + "="*60)
-                    print(f"REGION SELECTION MODE - Cmd+Shift+{key1.replace('_r', ' (Right)').replace('_', ' ').title()}")
-                    print("="*60)
-                    recorder.use_region_selection = True
-                    recorder.capture_screenshot = True
-                else:
-                    play_double_beep()  # Audio feedback for screenshot mode
-                    recorder.use_region_selection = False
-                    recorder.capture_screenshot = True
-                    key_display = key1.replace('_r', ' (Right)').replace('_', ' ').title()
-                    print("\n" + "="*60)
-                    print(f"{key_display} PRESSED - Recording with screenshot...")
-                    print("="*60)
-                recorder.start_recording()
+        # Prevent re-triggering if key already pressed
+        key_id = str(key)
+        if key_id in TRIGGER_KEYS_PRESSED:
+            return
+        TRIGGER_KEYS_PRESSED.add(key_id)
         
-        # Check for audio-only trigger
-        elif check_key_match(key, key2, trigger_map):
-            if not recorder.is_recording:
-                play_start_beep()  # Audio feedback for audio-only mode
-                recorder.use_region_selection = False
-                recorder.capture_screenshot = False
-                key_display = key2.replace('_r', ' (Right)').replace('_', ' ').title()
+        # Check for trigger key combinations
+        is_key1 = check_key_match(key, key1, trigger_map)
+        is_key2 = check_key_match(key, key2, trigger_map)
+        
+        if not is_key1 and not is_key2:
+            return
+        
+        # Already recording - ignore additional presses
+        if recorder.is_recording:
+            return
+        
+        # Key 1 (Right Cmd) combinations
+        if is_key1:
+            # Ctrl + Key1 = Delete last message
+            if 'ctrl' in MODIFIER_KEYS_PRESSED:
+                delete_last_message()
+                return
+            
+            # Alt + Key1 = Create new chat
+            if 'alt' in MODIFIER_KEYS_PRESSED:
+                create_new_chat()
+                return
+            
+            # Cmd (left) + Key1 = Region selection mode
+            if 'cmd' in MODIFIER_KEYS_PRESSED:
                 print("\n" + "="*60)
-                print(f"{key_display} PRESSED - Recording audio only...")
+                print("Cmd+Key: REGION SELECTION MODE")
+                print("Select area then release to record audio")
                 print("="*60)
+                recorder.use_region_selection = True
+                recorder.capture_screenshot = True
                 recorder.start_recording()
+                return
+            
+            # Just Key1 = Screenshot + audio
+            play_double_beep()
+            recorder.use_region_selection = False
+            recorder.capture_screenshot = True
+            key_display = key1.replace('_r', ' (Right)').replace('_', ' ').title()
+            print("\n" + "="*60)
+            print(f"{key_display}: Recording with screenshot...")
+            print("="*60)
+            recorder.start_recording()
+        
+        # Key 2 (Right Shift) combinations
+        elif is_key2:
+            # Alt + Key2 = Configure system prompt
+            if 'alt' in MODIFIER_KEYS_PRESSED:
+                configure_system_prompt()
+                return
+            
+            # Just Key2 = Audio only
+            play_start_beep()
+            recorder.use_region_selection = False
+            recorder.capture_screenshot = False
+            key_display = key2.replace('_r', ' (Right)').replace('_', ' ').title()
+            print("\n" + "="*60)
+            print(f"{key_display}: Recording audio only...")
+            print("="*60)
+            recorder.start_recording()
+            
     except Exception as e:
         print(f"Error in key press handler: {e}")
 
@@ -1111,7 +1195,7 @@ def on_release(key, recorder, trigger_key_screenshot=None, trigger_key_audio=Non
         trigger_key_screenshot: Key for screenshot+audio mode
         trigger_key_audio: Key for audio-only mode
     """
-    global MODIFIER_KEYS_PRESSED
+    global MODIFIER_KEYS_PRESSED, TRIGGER_KEYS_PRESSED
     
     # Use config defaults if not provided
     key1 = trigger_key_screenshot or TRIGGER_KEY_WITH_SCREENSHOT
@@ -1121,16 +1205,25 @@ def on_release(key, recorder, trigger_key_screenshot=None, trigger_key_audio=Non
     trigger_map = get_trigger_key_map(key1, key2)
     
     try:
-        # Track modifier key releases
         from pynput.keyboard import Key
+        
+        # Track modifier key releases
         if key in (Key.cmd, Key.cmd_r, Key.cmd_l):
             MODIFIER_KEYS_PRESSED.discard('cmd')
+            return
         elif key in (Key.shift, Key.shift_r, Key.shift_l):
             MODIFIER_KEYS_PRESSED.discard('shift')
+            return
         elif key in (Key.alt, Key.alt_r, Key.alt_l):
             MODIFIER_KEYS_PRESSED.discard('alt')
+            return
         elif key in (Key.ctrl, Key.ctrl_r, Key.ctrl_l):
             MODIFIER_KEYS_PRESSED.discard('ctrl')
+            return
+        
+        # Remove from pressed set
+        key_id = str(key)
+        TRIGGER_KEYS_PRESSED.discard(key_id)
         
         # Check if either trigger key was released
         if check_key_match(key, key1, trigger_map) or check_key_match(key, key2, trigger_map):
@@ -1139,6 +1232,11 @@ def on_release(key, recorder, trigger_key_screenshot=None, trigger_key_audio=Non
                 capture_screenshot_flag = recorder.capture_screenshot
                 use_region_flag = recorder.use_region_selection
                 audio_path = recorder.stop_recording()
+                
+                # Reset recorder state
+                recorder.use_region_selection = False
+                recorder.capture_screenshot = True
+                
                 if audio_path:
                     process_query(audio_path, capture_screenshot_flag, use_region_flag)
     except Exception as e:
@@ -1438,20 +1536,18 @@ def main():
     trigger_map = get_trigger_key_map(trigger_key_screenshot, trigger_key_audio)
     
     print("\n" + "="*60)
-    print("READY! Three modes:")
-    print("")
-    print(f"   {key1_display} - Audio + Screenshot")
-    print("      Hold, speak, release → sends with focused window image")
-    print("")
-    print(f"   Cmd+Shift+{key1_display} - Region Selection")
-    print("      Opens overlay to select specific screen area")
-    print("")
-    print(f"   {key2_display} - Audio Only")
-    print("      Hold, speak, release → sends without image")
-    print("")
-    print("    ESC - Reset conversation (start fresh)")
-    print("")
-    print("   Press Ctrl+C to exit")
+    print("BIOBOT READY - KEYBOARD SHORTCUTS")
+    print("="*60)
+    print("\n📸 RECORDING MODES:")
+    print(f"   {key1_display}              → Screenshot + Audio")
+    print(f"   Cmd + {key1_display}        → Region Select + Audio")
+    print(f"   {key2_display}            → Audio Only")
+    print("\n⚡ QUICK ACTIONS:")
+    print(f"   Ctrl + {key1_display}       → Delete Last Message")
+    print(f"   Alt + {key1_display}        → New Chat")
+    print(f"   Alt + {key2_display}      → System Prompt (soon)")
+    print(f"   ESC                  → Reset Conversation")
+    print("\n💡 TIP: Release key after speaking to send")
     print("="*60 + "\n")
     
     # Set up keyboard listener with custom keys
