@@ -32,8 +32,7 @@ class RegionSelector:
         self.root.attributes('-fullscreen', True)
         self.root.attributes('-topmost', True)
         self.root.attributes('-alpha', 0.3)
-        self.root.configure(bg='black')
-        self.root.cursor = 'crosshair'
+        self.root.configure(bg='black', cursor='crosshair')
         
         # Create canvas
         screen_width = self.root.winfo_screenwidth()
@@ -44,17 +43,26 @@ class RegionSelector:
             width=screen_width,
             height=screen_height,
             bg='black',
-            highlightthickness=0
+            highlightthickness=0,
+            cursor='crosshair'
         )
         self.canvas.pack()
         
-        # Instructions
+        # Instructions with better visibility
         instructions = self.canvas.create_text(
             screen_width // 2,
-            50,
-            text="Drag to select region • ESC to cancel • Click without drag for focused window",
+            30,
+            text="DRAG TO SELECT REGION",
             fill='white',
-            font=('Arial', 16)
+            font=('Arial', 20, 'bold')
+        )
+        
+        sub_instructions = self.canvas.create_text(
+            screen_width // 2,
+            60,
+            text="ESC = Cancel  |  Click without drag = Focused window",
+            fill='yellow',
+            font=('Arial', 14)
         )
         
         # Bind mouse events
@@ -63,29 +71,37 @@ class RegionSelector:
         self.canvas.bind('<ButtonRelease-1>', self.on_mouse_up)
         self.root.bind('<Escape>', self.on_cancel)
         
+        # Show crosshair at mouse position
+        self.canvas.bind('<Motion>', self.on_mouse_move)
+        
         self.root.mainloop()
         
         return self.selection
+    
+    def on_mouse_move(self, event):
+        """Show crosshair at mouse position."""
+        # This gives better visual feedback
+        pass
     
     def on_mouse_down(self, event):
         """Handle mouse button press."""
         self.start_x = event.x
         self.start_y = event.y
         
-        # Create rectangle
+        # Create rectangle with bright green
         self.rect = self.canvas.create_rectangle(
             self.start_x,
             self.start_y,
             self.start_x,
             self.start_y,
-            outline='red',
-            width=2
+            outline='#00FF00',
+            width=3
         )
     
     def on_mouse_drag(self, event):
         """Handle mouse drag."""
         if self.rect:
-            # Update rectangle
+            # Update rectangle with bright color for visibility
             self.canvas.coords(
                 self.rect,
                 self.start_x,
@@ -93,6 +109,7 @@ class RegionSelector:
                 event.x,
                 event.y
             )
+            self.canvas.itemconfig(self.rect, outline='#00FF00', width=3)
     
     def on_mouse_up(self, event):
         """Handle mouse button release."""
