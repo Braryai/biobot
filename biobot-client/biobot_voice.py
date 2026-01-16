@@ -1105,13 +1105,13 @@ def on_press(key, recorder, trigger_key_screenshot=None, trigger_key_audio=None)
             MODIFIER_KEYS_PRESSED.add('ctrl')
             return
         
-        # ESC = Reset conversation
+        # ESC = Reset conversation (globals already declared at function start)
         if key == Key.esc:
             if CONVERSATION_HISTORY or CURRENT_CHAT_ID:
                 print("\n" + "="*60)
                 print("ESC: Conversation reset - Starting fresh...")
                 print("="*60 + "\n")
-                CONVERSATION_HISTORY = []
+                CONVERSATION_HISTORY.clear()
                 CURRENT_CHAT_ID = None
             return
         
