@@ -5,7 +5,7 @@
 set -e  # Exit on error
 
 echo "============================================================"
-echo "🤖 BioBot Voice Client - Setup Script"
+echo "BioBot Voice Client - Setup Script"
 echo "============================================================"
 echo ""
 
@@ -17,30 +17,30 @@ NC='\033[0m' # No Color
 
 # Check if we're in the right directory
 if [ ! -f "biobot_voice.py" ]; then
-    echo -e "${RED}❌ Error: biobot_voice.py not found${NC}"
+    echo -e "${RED}Error: biobot_voice.py not found${NC}"
     echo "Please run this script from the biobot-client directory:"
     echo "  cd biobot-client"
     echo "  ./setup.sh"
     exit 1
 fi
 
-echo "📂 Current directory: $(pwd)"
+echo "Current directory: $(pwd)"
 echo ""
 
 # Check Python version
-echo "🐍 Checking Python version..."
+echo "Checking Python version..."
 if command -v python3 &> /dev/null; then
     PYTHON_VERSION=$(python3 --version 2>&1 | awk '{print $2}')
     PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
     PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
     
     if [ "$PYTHON_MAJOR" -ge 3 ] && [ "$PYTHON_MINOR" -ge 11 ]; then
-        echo -e "${GREEN}✓ Python $PYTHON_VERSION found${NC}"
+        echo -e "${GREEN}Python $PYTHON_VERSION found${NC}"
     else
-        echo -e "${YELLOW}⚠ Python $PYTHON_VERSION found, but 3.11+ recommended${NC}"
+        echo -e "${YELLOW}Python $PYTHON_VERSION found, but 3.11+ recommended${NC}"
     fi
 else
-    echo -e "${RED}❌ Python 3 not found${NC}"
+    echo -e "${RED}Python 3 not found${NC}"
     echo "Please install Python 3.11 or higher:"
     echo "  brew install python@3.11"
     exit 1
@@ -48,13 +48,13 @@ fi
 echo ""
 
 # Check if config.py exists
-echo "⚙️  Checking configuration..."
+echo "Checking configuration..."
 if [ ! -f "config.py" ]; then
-    echo -e "${YELLOW}⚠ config.py not found${NC}"
+    echo -e "${YELLOW}config.py not found${NC}"
     echo "Creating from template..."
     cp config.py.example config.py
-    echo -e "${GREEN}✓ Created config.py${NC}"
-    echo -e "${YELLOW}⚠ You need to edit config.py with your credentials!${NC}"
+    echo -e "${GREEN}Created config.py${NC}"
+    echo -e "${YELLOW}You need to edit config.py with your credentials!${NC}"
     echo ""
     echo "Required settings:"
     echo "  - OPENWEBUI_TOKEN (from Open WebUI → Settings → API Keys)"
@@ -64,16 +64,16 @@ if [ ! -f "config.py" ]; then
     read -p "Press Enter to edit config.py now, or Ctrl+C to exit and edit later..."
     ${EDITOR:-nano} config.py
 else
-    echo -e "${GREEN}✓ config.py found${NC}"
+    echo -e "${GREEN}config.py found${NC}"
 fi
 echo ""
 
 # Install dependencies
-echo "📦 Installing Python dependencies..."
+echo "Installing Python dependencies..."
 if pip3 install -r requirements.txt; then
-    echo -e "${GREEN}✓ Dependencies installed successfully${NC}"
+    echo -e "${GREEN}Dependencies installed successfully${NC}"
 else
-    echo -e "${RED}❌ Failed to install dependencies${NC}"
+    echo -e "${RED}Failed to install dependencies${NC}"
     echo "Try:"
     echo "  pip3 install --upgrade pip"
     echo "  pip3 install -r requirements.txt"
@@ -82,7 +82,7 @@ fi
 echo ""
 
 # Check permissions
-echo "🔐 Checking macOS permissions..."
+echo "Checking macOS permissions..."
 echo ""
 echo "BioBot requires the following permissions:"
 echo "  1. Microphone access (for audio recording)"
@@ -93,30 +93,30 @@ echo "Grant these permissions in System Settings → Privacy & Security"
 echo ""
 
 # Test Open WebUI connection
-echo "🔗 Testing Open WebUI connection..."
+echo "Testing Open WebUI connection..."
 if [ -f "config.py" ]; then
     # Extract URL from config.py
     OPENWEBUI_URL=$(grep "OPENWEBUI_URL" config.py | cut -d'"' -f2)
     
     if [ -n "$OPENWEBUI_URL" ]; then
         if curl -s --max-time 5 "$OPENWEBUI_URL/api/config" > /dev/null 2>&1; then
-            echo -e "${GREEN}✓ Open WebUI is accessible at $OPENWEBUI_URL${NC}"
+            echo -e "${GREEN}Open WebUI is accessible at $OPENWEBUI_URL${NC}"
         else
-            echo -e "${YELLOW}⚠ Could not connect to Open WebUI at $OPENWEBUI_URL${NC}"
+            echo -e "${YELLOW}Could not connect to Open WebUI at $OPENWEBUI_URL${NC}"
             echo "  Please verify:"
             echo "  - Open WebUI is running"
             echo "  - URL in config.py is correct"
             echo "  - You have network access to the server"
         fi
     else
-        echo -e "${YELLOW}⚠ OPENWEBUI_URL not configured yet${NC}"
+        echo -e "${YELLOW}OPENWEBUI_URL not configured yet${NC}"
     fi
 fi
 echo ""
 
 # All done
 echo "============================================================"
-echo -e "${GREEN}✅ Setup complete!${NC}"
+echo -e "${GREEN}Setup complete!${NC}"
 echo "============================================================"
 echo ""
 echo "Next steps:"
@@ -138,5 +138,5 @@ echo "   - Right Command: Audio + Screenshot mode"
 echo ""
 echo "See README.md for full documentation."
 echo ""
-echo "Happy datacenter troubleshooting! 🤖"
+echo "Happy datacenter troubleshooting!"
 echo ""

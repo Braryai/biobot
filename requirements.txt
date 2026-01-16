@@ -1,0 +1,23 @@
+# BioBot Requirements
+# Install with: pip install -r requirements.txt
+
+# Keyboard input monitoring
+pynput>=1.7.6
+
+# Audio recording
+sounddevice>=0.4.6
+numpy>=1.24.0
+
+# HTTP client for OpenWebUI API
+httpx>=0.24.0
+
+# OpenAI API (for Whisper STT)
+openai>=1.0.0
+
+# macOS window capture
+pyobjc-framework-Quartz>=10.0
+pyobjc-framework-Cocoa>=10.0
+
+# Optional: Local Speech-to-Text (offline, free)
+# faster-whisper>=0.10.0
+
