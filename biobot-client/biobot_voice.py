@@ -22,6 +22,7 @@ import base64
 import os
 from typing import Optional, Dict, Any, List
 import tempfile
+import importlib
 
 # Import configuration
 try:
@@ -782,9 +783,18 @@ def process_query(audio_path: str, capture_screenshot_flag: bool):
 
 
 # ============ KEYBOARD LISTENER ============
-def get_trigger_key_map():
-    """Map trigger key strings to pynput Key objects."""
+def get_trigger_key_map(trigger_key_screenshot=None, trigger_key_audio=None):
+    """Map trigger key strings to pynput Key objects.
+    
+    Args:
+        trigger_key_screenshot: Override for screenshot trigger
+        trigger_key_audio: Override for audio-only trigger
+    """
     from pynput.keyboard import Key
+    
+    # Use provided keys or fall back to config
+    key1 = trigger_key_screenshot or TRIGGER_KEY_WITH_SCREENSHOT
+    key2 = trigger_key_audio or TRIGGER_KEY_AUDIO_ONLY
     
     return {
         'cmd_r': Key.cmd_r,
@@ -795,13 +805,22 @@ def get_trigger_key_map():
         'alt': Key.alt,
         'ctrl_r': Key.ctrl_r,
         'ctrl': Key.ctrl,
+        'key1': key1,  # Store configured keys
+        'key2': key2,
     }
 
 
-def check_key_match(key, trigger_key_str):
-    """Check if a key matches a trigger key string."""
+def check_key_match(key, trigger_key_str, trigger_map=None):
+    """Check if a key matches a trigger key string.
+    
+    Args:
+        key: The pynput key object
+        trigger_key_str: String identifier for the trigger key
+        trigger_map: Optional pre-built trigger map to use
+    """
     try:
-        trigger_map = get_trigger_key_map()
+        if trigger_map is None:
+            trigger_map = get_trigger_key_map()
         
         # Check for mapped modifier keys
         if trigger_key_str.lower() in trigger_map:
@@ -819,8 +838,22 @@ def check_key_match(key, trigger_key_str):
     return False
 
 
-def on_press(key, recorder):
-    """Handle key press events - start recording."""
+def on_press(key, recorder, trigger_key_screenshot=None, trigger_key_audio=None):
+    """Handle key press events - start recording.
+    
+    Args:
+        key: The pynput key object
+        recorder: AudioRecorder instance
+        trigger_key_screenshot: Key for screenshot+audio mode
+        trigger_key_audio: Key for audio-only mode
+    """
+    # Use config defaults if not provided
+    key1 = trigger_key_screenshot or TRIGGER_KEY_WITH_SCREENSHOT
+    key2 = trigger_key_audio or TRIGGER_KEY_AUDIO_ONLY
+    
+    # Build trigger map once
+    trigger_map = get_trigger_key_map(key1, key2)
+    
     try:
         # Check for Escape key to reset conversation
         from pynput.keyboard import Key
@@ -834,20 +867,20 @@ def on_press(key, recorder):
             return
         
         # Check for screenshot + audio trigger
-        if check_key_match(key, TRIGGER_KEY_WITH_SCREENSHOT):
+        if check_key_match(key, key1, trigger_map):
             if not recorder.is_recording:
                 recorder.capture_screenshot = True
-                key_display = TRIGGER_KEY_WITH_SCREENSHOT.replace('_r', ' (Right)').replace('_', ' ').title()
+                key_display = key1.replace('_r', ' (Right)').replace('_', ' ').title()
                 print("\n" + "="*60)
                 print(f"{key_display} PRESSED - Recording with screenshot...")
                 print("="*60)
                 recorder.start_recording()
         
         # Check for audio-only trigger
-        elif check_key_match(key, TRIGGER_KEY_AUDIO_ONLY):
+        elif check_key_match(key, key2, trigger_map):
             if not recorder.is_recording:
                 recorder.capture_screenshot = False
-                key_display = TRIGGER_KEY_AUDIO_ONLY.replace('_r', ' (Right)').replace('_', ' ').title()
+                key_display = key2.replace('_r', ' (Right)').replace('_', ' ').title()
                 print("\n" + "="*60)
                 print(f"{key_display} PRESSED - Recording audio only...")
                 print("="*60)
@@ -856,11 +889,25 @@ def on_press(key, recorder):
         print(f"Error in key press handler: {e}")
 
 
-def on_release(key, recorder):
-    """Handle key release events - stop recording and process."""
+def on_release(key, recorder, trigger_key_screenshot=None, trigger_key_audio=None):
+    """Handle key release events - stop recording and process.
+    
+    Args:
+        key: The pynput key object
+        recorder: AudioRecorder instance
+        trigger_key_screenshot: Key for screenshot+audio mode
+        trigger_key_audio: Key for audio-only mode
+    """
+    # Use config defaults if not provided
+    key1 = trigger_key_screenshot or TRIGGER_KEY_WITH_SCREENSHOT
+    key2 = trigger_key_audio or TRIGGER_KEY_AUDIO_ONLY
+    
+    # Build trigger map once
+    trigger_map = get_trigger_key_map(key1, key2)
+    
     try:
         # Check if either trigger key was released
-        if check_key_match(key, TRIGGER_KEY_WITH_SCREENSHOT) or check_key_match(key, TRIGGER_KEY_AUDIO_ONLY):
+        if check_key_match(key, key1, trigger_map) or check_key_match(key, key2, trigger_map):
             if recorder.is_recording:
                 capture_screenshot_flag = recorder.capture_screenshot
                 audio_path = recorder.stop_recording()
@@ -870,12 +917,220 @@ def on_release(key, recorder):
         print(f"Error in key release handler: {e}")
 
 
+# ============ INTERACTIVE KEY SETUP ============
+def setup_trigger_keys():
+    """Interactive wizard to configure trigger keys on first run."""
+    print("\n" + "="*60)
+    print("FIRST-TIME SETUP: Configure Your Trigger Keys")
+    print("="*60)
+    print("\nBioBot needs two trigger keys for different modes:")
+    print("\n  Mode 1: Audio + Screenshot")
+    print("     Takes a screenshot and records audio simultaneously")
+    print("\n  Mode 2: Audio Only")
+    print("     Records audio without taking a screenshot")
+    print("\n" + "-"*60)
+    
+    key_mapping = {
+        'Key.cmd_r': 'cmd_r',
+        'Key.shift_r': 'shift_r',
+        'Key.alt_r': 'alt_r',
+        'Key.ctrl_r': 'ctrl_r',
+        'Key.cmd': 'cmd',
+        'Key.shift': 'shift',
+        'Key.alt': 'alt',
+        'Key.ctrl': 'ctrl',
+    }
+    
+    def capture_key():
+        """Capture a single key press with hold confirmation."""
+        import time
+        import sys
+        
+        captured_key = [None]
+        key_pressed = [False]
+        key_released = [False]
+        
+        def on_press(key):
+            key_str = str(key)
+            if key_str in key_mapping and not key_pressed[0]:
+                captured_key[0] = key_mapping[key_str]
+                key_pressed[0] = True
+        
+        def on_release(key):
+            if key_pressed[0] and not key_released[0]:
+                key_released[0] = True
+                return False  # Stop listener
+        
+        listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+        listener.start()
+        
+        # Wait for initial key press
+        while not key_pressed[0]:
+            time.sleep(0.01)
+        
+        # Show progress bar while key is held
+        print("\nHold the key for 2 seconds...")
+        progress_duration = 2.0  # seconds
+        bar_width = 40
+        start_time = time.time()
+        
+        while time.time() - start_time < progress_duration:
+            if key_released[0]:
+                # Key released too early
+                listener.stop()
+                print("\n\nKey released too early! Please hold for 2 seconds.")
+                return None
+            
+            elapsed = time.time() - start_time
+            progress = min(elapsed / progress_duration, 1.0)
+            filled = int(bar_width * progress)
+            bar = '█' * filled + '░' * (bar_width - filled)
+            percent = int(progress * 100)
+            
+            sys.stdout.write(f'\r[{bar}] {percent}%')
+            sys.stdout.flush()
+            time.sleep(0.05)
+        
+        print("\n✓ Key captured!")
+        listener.stop()
+        
+        return captured_key[0]
+    
+    # Capture first key
+    print("\nSTEP 1/2: Press and HOLD the key for 'Audio + Screenshot' mode")
+    print("          Recommended: Right Command (⌘)")
+    print("\nPress and hold your key now...")
+    key1 = capture_key()
+    
+    while not key1:
+        print("\nTry again - Press and HOLD for 2 seconds...")
+        key1 = capture_key()
+    
+    key1_display = key1.replace('_r', ' (Right)').replace('_', ' ').title()
+    print(f"Registered: {key1_display}")
+    
+    # Capture second key
+    print("\nSTEP 2/2: Press and HOLD the key for 'Audio Only' mode")
+    print("          Recommended: Right Shift (⇧)")
+    print("\nPress and hold your key now...")
+    key2 = capture_key()
+    
+    while not key2:
+        print("\nTry again - Press and HOLD for 2 seconds...")
+        key2 = capture_key()
+    
+    while key2 == key1:
+        print("\nERROR: You must choose a different key from the first one.")
+        print("Try again - Press and HOLD for 2 seconds...")
+        key2 = capture_key()
+    
+    key2_display = key2.replace('_r', ' (Right)').replace('_', ' ').title()
+    print(f"Registered: {key2_display}")
+    
+    # Confirm selection
+    print("\n" + "="*60)
+    print("KEY CONFIGURATION SUMMARY")
+    print("="*60)
+    print(f"\n  Audio + Screenshot: {key1_display}")
+    print(f"  Audio Only:         {key2_display}")
+    print(f"\n  Conversation Reset: ESC (always)")
+    print("\n" + "="*60)
+    print("\nConfirm this configuration? (Y/n): ", end="", flush=True)
+    
+    confirmation = input().strip().lower()
+    if confirmation and confirmation not in ['y', 'yes']:
+        print("\nSetup cancelled. Please run again to reconfigure.")
+        return None
+    
+    return key1, key2
+
+
+def update_config_file(key1, key2):
+    """Update config.py with the selected trigger keys."""
+    config_path = Path(__file__).parent / "config.py"
+    
+    if not config_path.exists():
+        print("\nERROR: config.py not found!")
+        print("Please create config.py from config.py.example first.")
+        return False
+    
+    # Read current config
+    with open(config_path, 'r') as f:
+        config_content = f.read()
+    
+    # Update the trigger keys
+    import re
+    
+    # Replace TRIGGER_KEY_WITH_SCREENSHOT
+    config_content = re.sub(
+        r"TRIGGER_KEY_WITH_SCREENSHOT\s*=\s*['\"].*?['\"]",
+        f"TRIGGER_KEY_WITH_SCREENSHOT = '{key1}'",
+        config_content
+    )
+    
+    # Replace TRIGGER_KEY_AUDIO_ONLY
+    config_content = re.sub(
+        r"TRIGGER_KEY_AUDIO_ONLY\s*=\s*['\"].*?['\"]",
+        f"TRIGGER_KEY_AUDIO_ONLY = '{key2}'",
+        config_content
+    )
+    
+    # Write back to config
+    with open(config_path, 'w') as f:
+        f.write(config_content)
+    
+    print("\nConfiguration saved successfully!")
+    print(f"Updated: {config_path}")
+    
+    # Reload the config module to get updated values
+    import config
+    importlib.reload(config)
+    
+    return config.TRIGGER_KEY_WITH_SCREENSHOT, config.TRIGGER_KEY_AUDIO_ONLY
+
+
+def check_first_run():
+    """Check if this is the first run and trigger keys need configuration.
+    
+    Returns:
+        tuple or None: (key1, key2) if custom keys were configured, None to use defaults
+    """
+    # Check if trigger keys are still at default values
+    if TRIGGER_KEY_WITH_SCREENSHOT == 'cmd_r' and TRIGGER_KEY_AUDIO_ONLY == 'shift_r':
+        print("\nDetected default key configuration.")
+        print("\nWould you like to configure custom trigger keys? (y/N): ", end="", flush=True)
+        response = input().strip().lower()
+        
+        if response in ['y', 'yes']:
+            keys = setup_trigger_keys()
+            if keys:
+                key1, key2 = keys
+                result = update_config_file(key1, key2)
+                if result:
+                    print("\nConfiguration updated! Continuing with new keys...")
+                    return result  # Return the new keys
+        else:
+            print("\nUsing default keys. You can reconfigure later by editing config.py")
+    
+    return None  # Use current config
+
+
 # ============ MAIN ENTRY POINT ============
 def main():
     """Main entry point for BioBot Voice Client."""
     print("="*60)
     print("BioBot Voice Client - Datacenter AI Assistant")
     print("="*60)
+    
+    # Check for first-time setup
+    custom_keys = check_first_run()
+    
+    # Use custom keys if configured, otherwise use imported values
+    if custom_keys:
+        trigger_key_screenshot, trigger_key_audio = custom_keys
+    else:
+        trigger_key_screenshot = TRIGGER_KEY_WITH_SCREENSHOT
+        trigger_key_audio = TRIGGER_KEY_AUDIO_ONLY
     
     # Fetch available models
     print("\nFetching available models...")
@@ -943,11 +1198,14 @@ def main():
     recorder = AudioRecorder()
     
     # Format the key names nicely for display
-    key1_display = TRIGGER_KEY_WITH_SCREENSHOT.replace('_r', ' (Right)').replace('_', ' ').title()
-    key2_display = TRIGGER_KEY_AUDIO_ONLY.replace('_r', ' (Right)').replace('_', ' ').title()
+    key1_display = trigger_key_screenshot.replace('_r', ' (Right)').replace('_', ' ').title()
+    key2_display = trigger_key_audio.replace('_r', ' (Right)').replace('_', ' ').title()
+    
+    # Get trigger key map with custom keys
+    trigger_map = get_trigger_key_map(trigger_key_screenshot, trigger_key_audio)
     
     print("\n" + "="*60)
-    print("✅ READY! Two modes:")
+    print("READY! Two modes:")
     print("")
     print(f"   {key1_display} - Audio + Screenshot")
     print("      Hold, speak, release → sends with image")
@@ -961,11 +1219,11 @@ def main():
     print("   Press Ctrl+C to exit")
     print("="*60 + "\n")
     
-    # Set up keyboard listener
+    # Set up keyboard listener with custom keys
     try:
         with keyboard.Listener(
-            on_press=lambda key: on_press(key, recorder),
-            on_release=lambda key: on_release(key, recorder)
+            on_press=lambda key: on_press(key, recorder, trigger_key_screenshot, trigger_key_audio),
+            on_release=lambda key: on_release(key, recorder, trigger_key_screenshot, trigger_key_audio)
         ) as listener:
             listener.join()
     except KeyboardInterrupt:
