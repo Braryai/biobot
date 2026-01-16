@@ -56,6 +56,149 @@ except ImportError:
     exit(1)
 
 
+# ============ PERMISSION CHECKS ============
+def check_accessibility_permission() -> bool:
+    """Check if app has Accessibility permissions (for keyboard monitoring)."""
+    try:
+        from Quartz import (
+            CGPreflightScreenCaptureAccess,
+            AXIsProcessTrusted
+        )
+        return AXIsProcessTrusted()
+    except ImportError:
+        # If Quartz not available, assume permission granted
+        return True
+    except Exception as e:
+        print(f"Could not check accessibility permission: {e}")
+        return True
+
+
+def check_screen_recording_permission() -> bool:
+    """Check if app has Screen Recording permissions."""
+    try:
+        from Quartz import CGPreflightScreenCaptureAccess
+        return CGPreflightScreenCaptureAccess()
+    except ImportError:
+        return True
+    except Exception as e:
+        print(f"Could not check screen recording permission: {e}")
+        return True
+
+
+def check_microphone_permission() -> bool:
+    """Check if app has Microphone permissions."""
+    try:
+        # Try to open an audio stream briefly
+        import sounddevice as sd
+        with sd.InputStream(samplerate=16000, channels=1):
+            pass
+        return True
+    except Exception:
+        return False
+
+
+def check_all_permissions() -> bool:
+    """Check all required permissions and display warnings if missing."""
+    all_granted = True
+    
+    print("\nChecking system permissions...")
+    
+    # Accessibility (for keyboard monitoring)
+    if not check_accessibility_permission():
+        all_granted = False
+        print("\n⚠️  WARNING: Accessibility permission not granted!")
+        print("   BioBot needs this to monitor trigger key presses.")
+        print("   ")
+        print("   To grant permission:")
+        print("   1. Open System Settings > Privacy & Security > Accessibility")
+        print("   2. Click the lock to make changes")
+        print("   3. Add Terminal (or your terminal app) to the list")
+        print("   4. Restart BioBot")
+    else:
+        print("   ✓ Accessibility: Granted")
+    
+    # Screen Recording
+    if not check_screen_recording_permission():
+        all_granted = False
+        print("\n⚠️  WARNING: Screen Recording permission not granted!")
+        print("   BioBot needs this to capture screenshots.")
+        print("   ")
+        print("   To grant permission:")
+        print("   1. Open System Settings > Privacy & Security > Screen Recording")
+        print("   2. Click the lock to make changes")
+        print("   3. Add Terminal (or your terminal app) to the list")
+        print("   4. Restart BioBot")
+    else:
+        print("   ✓ Screen Recording: Granted")
+    
+    # Microphone
+    if not check_microphone_permission():
+        all_granted = False
+        print("\n⚠️  WARNING: Microphone permission not granted!")
+        print("   BioBot needs this to record audio.")
+        print("   ")
+        print("   To grant permission:")
+        print("   1. Open System Settings > Privacy & Security > Microphone")
+        print("   2. Click the lock to make changes")
+        print("   3. Add Terminal (or your terminal app) to the list")
+        print("   4. Restart BioBot")
+    else:
+        print("   ✓ Microphone: Granted")
+    
+    if not all_granted:
+        print("\n⚠️  Some permissions are missing. BioBot may not work correctly.")
+        print("   Continue anyway? (y/N): ", end="", flush=True)
+        response = input().strip().lower()
+        if response not in ['y', 'yes']:
+            return False
+    
+    return True
+
+
+# ============ AUDIO FEEDBACK ============
+def play_beep(frequency: int = 800, duration: float = 0.1, volume: float = 0.3):
+    """Play a simple beep tone for user feedback.
+    
+    Args:
+        frequency: Frequency in Hz (higher = higher pitch)
+        duration: Duration in seconds
+        volume: Volume (0.0 to 1.0)
+    """
+    try:
+        sample_rate = 44100
+        t = np.linspace(0, duration, int(sample_rate * duration))
+        wave = volume * np.sin(2 * np.pi * frequency * t)
+        sd.play(wave, sample_rate)
+        sd.wait()
+    except Exception as e:
+        # Silent fail - beeps are optional feedback
+        pass
+
+
+def play_double_beep():
+    """Play double beep for screenshot mode start."""
+    play_beep(frequency=800, duration=0.08, volume=0.25)
+    sd.sleep(50)
+    play_beep(frequency=800, duration=0.08, volume=0.25)
+
+
+def play_start_beep():
+    """Play single beep for audio-only mode start."""
+    play_beep(frequency=600, duration=0.1, volume=0.25)
+
+
+def play_stop_beep():
+    """Play beep when recording stops."""
+    play_beep(frequency=400, duration=0.15, volume=0.2)
+
+
+def play_submit_beep():
+    """Play confirmation beep when message is submitted."""
+    play_beep(frequency=1000, duration=0.1, volume=0.25)
+    sd.sleep(50)
+    play_beep(frequency=1200, duration=0.1, volume=0.25)
+
+
 # ============ AUDIO RECORDING ============
 class AudioRecorder:
     """Simple push-to-talk audio recorder."""
@@ -738,6 +881,7 @@ def process_query(audio_path: str, capture_screenshot_flag: bool):
             
             # Save to chat with attachments (like test_multiple_images.py)
             add_message_to_chat(CURRENT_CHAT_ID, message_text, assistant_message, file_data)
+            play_submit_beep()  # Audio confirmation that message was submitted
         
         # Step 6: Display the response
         display_response(response)
@@ -869,6 +1013,7 @@ def on_press(key, recorder, trigger_key_screenshot=None, trigger_key_audio=None)
         # Check for screenshot + audio trigger
         if check_key_match(key, key1, trigger_map):
             if not recorder.is_recording:
+                play_double_beep()  # Audio feedback for screenshot mode
                 recorder.capture_screenshot = True
                 key_display = key1.replace('_r', ' (Right)').replace('_', ' ').title()
                 print("\n" + "="*60)
@@ -879,6 +1024,7 @@ def on_press(key, recorder, trigger_key_screenshot=None, trigger_key_audio=None)
         # Check for audio-only trigger
         elif check_key_match(key, key2, trigger_map):
             if not recorder.is_recording:
+                play_start_beep()  # Audio feedback for audio-only mode
                 recorder.capture_screenshot = False
                 key_display = key2.replace('_r', ' (Right)').replace('_', ' ').title()
                 print("\n" + "="*60)
@@ -909,6 +1055,7 @@ def on_release(key, recorder, trigger_key_screenshot=None, trigger_key_audio=Non
         # Check if either trigger key was released
         if check_key_match(key, key1, trigger_map) or check_key_match(key, key2, trigger_map):
             if recorder.is_recording:
+                play_stop_beep()  # Audio feedback when recording stops
                 capture_screenshot_flag = recorder.capture_screenshot
                 audio_path = recorder.stop_recording()
                 if audio_path:
@@ -1121,6 +1268,11 @@ def main():
     print("="*60)
     print("BioBot Voice Client - Datacenter AI Assistant")
     print("="*60)
+    
+    # Check system permissions first
+    if not check_all_permissions():
+        print("\nExiting due to missing permissions.")
+        return
     
     # Check for first-time setup
     custom_keys = check_first_run()
