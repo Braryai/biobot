@@ -207,6 +207,7 @@ class AudioRecorder:
         self.audio_chunks = []
         self.stream = None
         self.capture_screenshot = True  # Track whether to capture screenshot
+        self.use_region_selection = False  # Track whether to use region selector
     
     def start_recording(self):
         """Start recording audio."""
@@ -216,7 +217,12 @@ class AudioRecorder:
         self.is_recording = True
         self.audio_chunks = []
         
-        mode = "with screenshot" if self.capture_screenshot else "audio only"
+        if self.use_region_selection:
+            mode = "with region selection"
+        elif self.capture_screenshot:
+            mode = "with screenshot"
+        else:
+            mode = "audio only"
         print(f"Recording {mode}... (release key to stop)")
         print("   Audio levels: ", end="", flush=True)
         
@@ -373,8 +379,39 @@ def transcribe_audio(audio_path: str) -> Optional[str]:
 
 
 # ============ SCREENSHOT CAPTURE ============
-def capture_screenshot() -> Optional[str]:
-    """Capture focused window or fall back to full screen."""
+def capture_screenshot(use_region_selection: bool = False) -> Optional[str]:
+    """Capture focused window, region selection, or fall back to full screen.
+    
+    Args:
+        use_region_selection: If True, show region selector overlay
+        
+    Returns:
+        Path to screenshot file or None if failed
+    """
+    if use_region_selection:
+        try:
+            from region_selector import RegionSelector, capture_region_screenshot
+            
+            print("   Opening region selector...")
+            selector = RegionSelector()
+            region = selector.select_region()
+            
+            if region:
+                x, y, w, h = region
+                print(f"   Selected region: {w}x{h} at ({x}, {y})")
+            else:
+                print("   No region selected, using focused window")
+            
+            return capture_region_screenshot(region)
+            
+        except ImportError as e:
+            print(f"   Region selector not available: {e}")
+            print("   Falling back to normal screenshot...")
+        except Exception as e:
+            print(f"   Region selection failed: {e}")
+            print("   Falling back to normal screenshot...")
+    
+    # Normal screenshot capture (focused window or full screen)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     screenshot_path = Path(f"/tmp/biobot_screenshot_{timestamp}.png")
     
@@ -812,9 +849,16 @@ def display_response(response: Dict[str, Any]):
 # Global variables to store conversation state
 CONVERSATION_HISTORY = []  # Text-only for API calls to avoid huge payloads
 CURRENT_CHAT_ID = None  # Open WebUI chat ID for frontend display
+MODIFIER_KEYS_PRESSED = set()  # Track which modifier keys are currently pressed
 
-def process_query(audio_path: str, capture_screenshot_flag: bool):
-    """Process the complete workflow: transcribe, optionally screenshot, query, display."""
+def process_query(audio_path: str, capture_screenshot_flag: bool, use_region_selection: bool = False):
+    """Process the complete workflow: transcribe, optionally screenshot, query, display.
+    
+    Args:
+        audio_path: Path to recorded audio file
+        capture_screenshot_flag: Whether to capture screenshot
+        use_region_selection: Whether to use region selector for screenshot
+    """
     global CONVERSATION_HISTORY, CURRENT_CHAT_ID
     screenshot_path = None
     
@@ -836,7 +880,7 @@ def process_query(audio_path: str, capture_screenshot_flag: bool):
         # Step 2: Capture screenshot if requested
         if capture_screenshot_flag:
             print("Capturing screenshot...")
-            screenshot_path = capture_screenshot()
+            screenshot_path = capture_screenshot(use_region_selection)
             if not screenshot_path:
                 print("Screenshot capture failed, continuing without image...")
         else:
@@ -991,6 +1035,8 @@ def on_press(key, recorder, trigger_key_screenshot=None, trigger_key_audio=None)
         trigger_key_screenshot: Key for screenshot+audio mode
         trigger_key_audio: Key for audio-only mode
     """
+    global MODIFIER_KEYS_PRESSED
+    
     # Use config defaults if not provided
     key1 = trigger_key_screenshot or TRIGGER_KEY_WITH_SCREENSHOT
     key2 = trigger_key_audio or TRIGGER_KEY_AUDIO_ONLY
@@ -1001,6 +1047,17 @@ def on_press(key, recorder, trigger_key_screenshot=None, trigger_key_audio=None)
     try:
         # Check for Escape key to reset conversation
         from pynput.keyboard import Key
+        
+        # Track modifier keys
+        if key in (Key.cmd, Key.cmd_r, Key.cmd_l):
+            MODIFIER_KEYS_PRESSED.add('cmd')
+        elif key in (Key.shift, Key.shift_r, Key.shift_l):
+            MODIFIER_KEYS_PRESSED.add('shift')
+        elif key in (Key.alt, Key.alt_r, Key.alt_l):
+            MODIFIER_KEYS_PRESSED.add('alt')
+        elif key in (Key.ctrl, Key.ctrl_r, Key.ctrl_l):
+            MODIFIER_KEYS_PRESSED.add('ctrl')
+        
         if key == Key.esc:
             if CONVERSATION_HISTORY or CURRENT_CHAT_ID:
                 print("\n" + "="*60)
@@ -1013,18 +1070,28 @@ def on_press(key, recorder, trigger_key_screenshot=None, trigger_key_audio=None)
         # Check for screenshot + audio trigger
         if check_key_match(key, key1, trigger_map):
             if not recorder.is_recording:
-                play_double_beep()  # Audio feedback for screenshot mode
-                recorder.capture_screenshot = True
-                key_display = key1.replace('_r', ' (Right)').replace('_', ' ').title()
-                print("\n" + "="*60)
-                print(f"{key_display} PRESSED - Recording with screenshot...")
-                print("="*60)
+                # Check if Cmd+Shift for region selection
+                if 'cmd' in MODIFIER_KEYS_PRESSED and 'shift' in MODIFIER_KEYS_PRESSED:
+                    print("\n" + "="*60)
+                    print(f"REGION SELECTION MODE - Cmd+Shift+{key1.replace('_r', ' (Right)').replace('_', ' ').title()}")
+                    print("="*60)
+                    recorder.use_region_selection = True
+                    recorder.capture_screenshot = True
+                else:
+                    play_double_beep()  # Audio feedback for screenshot mode
+                    recorder.use_region_selection = False
+                    recorder.capture_screenshot = True
+                    key_display = key1.replace('_r', ' (Right)').replace('_', ' ').title()
+                    print("\n" + "="*60)
+                    print(f"{key_display} PRESSED - Recording with screenshot...")
+                    print("="*60)
                 recorder.start_recording()
         
         # Check for audio-only trigger
         elif check_key_match(key, key2, trigger_map):
             if not recorder.is_recording:
                 play_start_beep()  # Audio feedback for audio-only mode
+                recorder.use_region_selection = False
                 recorder.capture_screenshot = False
                 key_display = key2.replace('_r', ' (Right)').replace('_', ' ').title()
                 print("\n" + "="*60)
@@ -1044,6 +1111,8 @@ def on_release(key, recorder, trigger_key_screenshot=None, trigger_key_audio=Non
         trigger_key_screenshot: Key for screenshot+audio mode
         trigger_key_audio: Key for audio-only mode
     """
+    global MODIFIER_KEYS_PRESSED
+    
     # Use config defaults if not provided
     key1 = trigger_key_screenshot or TRIGGER_KEY_WITH_SCREENSHOT
     key2 = trigger_key_audio or TRIGGER_KEY_AUDIO_ONLY
@@ -1052,14 +1121,26 @@ def on_release(key, recorder, trigger_key_screenshot=None, trigger_key_audio=Non
     trigger_map = get_trigger_key_map(key1, key2)
     
     try:
+        # Track modifier key releases
+        from pynput.keyboard import Key
+        if key in (Key.cmd, Key.cmd_r, Key.cmd_l):
+            MODIFIER_KEYS_PRESSED.discard('cmd')
+        elif key in (Key.shift, Key.shift_r, Key.shift_l):
+            MODIFIER_KEYS_PRESSED.discard('shift')
+        elif key in (Key.alt, Key.alt_r, Key.alt_l):
+            MODIFIER_KEYS_PRESSED.discard('alt')
+        elif key in (Key.ctrl, Key.ctrl_r, Key.ctrl_l):
+            MODIFIER_KEYS_PRESSED.discard('ctrl')
+        
         # Check if either trigger key was released
         if check_key_match(key, key1, trigger_map) or check_key_match(key, key2, trigger_map):
             if recorder.is_recording:
                 play_stop_beep()  # Audio feedback when recording stops
                 capture_screenshot_flag = recorder.capture_screenshot
+                use_region_flag = recorder.use_region_selection
                 audio_path = recorder.stop_recording()
                 if audio_path:
-                    process_query(audio_path, capture_screenshot_flag)
+                    process_query(audio_path, capture_screenshot_flag, use_region_flag)
     except Exception as e:
         print(f"Error in key release handler: {e}")
 
@@ -1357,17 +1438,19 @@ def main():
     trigger_map = get_trigger_key_map(trigger_key_screenshot, trigger_key_audio)
     
     print("\n" + "="*60)
-    print("READY! Two modes:")
+    print("READY! Three modes:")
     print("")
     print(f"   {key1_display} - Audio + Screenshot")
-    print("      Hold, speak, release → sends with image")
+    print("      Hold, speak, release → sends with focused window image")
+    print("")
+    print(f"   Cmd+Shift+{key1_display} - Region Selection")
+    print("      Opens overlay to select specific screen area")
     print("")
     print(f"   {key2_display} - Audio Only")
     print("      Hold, speak, release → sends without image")
     print("")
     print("    ESC - Reset conversation (start fresh)")
     print("")
-    print("   Using modifier keys prevents beeping!")
     print("   Press Ctrl+C to exit")
     print("="*60 + "\n")
     
