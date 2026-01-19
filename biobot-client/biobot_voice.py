@@ -565,7 +565,7 @@ def encode_image_to_base64(image_path: str) -> str:
         return base64.b64encode(image_file.read()).decode('utf-8')
 
 
-def create_chat_in_openwebui(model: str) -> Optional[str]:
+def create_chat_in_openwebui(model: str, system_prompt: Optional[str] = None) -> Optional[str]:
     """Create a new chat in Open WebUI and return the chat ID."""
     try:
         headers = {
@@ -573,12 +573,17 @@ def create_chat_in_openwebui(model: str) -> Optional[str]:
             "Content-Type": "application/json"
         }
         
-        payload = {
-            "chat": {
-                "name": f"BioBot - {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-                "models": [model]
-            }
+        chat_data = {
+            "name": f"BioBot - {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            "models": [model]
         }
+        
+        # Add system prompt if provided
+        if system_prompt:
+            chat_data["params"] = {"system": system_prompt}
+            print(f"   📝 System prompt: {system_prompt[:50]}...")
+        
+        payload = {"chat": chat_data}
         
         url = f"{OPENWEBUI_URL}/api/v1/chats/new"
         
@@ -853,6 +858,14 @@ MODIFIER_KEYS_PRESSED = set()  # Track which modifier keys are currently pressed
 TRIGGER_KEYS_PRESSED = set()  # Track which trigger keys are currently pressed
 SYSTEM_PROMPT = None  # Optional system prompt for chats
 
+# System prompt presets
+SYSTEM_PROMPT_PRESETS = {
+    "datacenter": "You are an expert datacenter technician assistant. Provide concise, technical answers about server hardware, networking, troubleshooting, and datacenter operations. Be direct and actionable.",
+    "debug": "You are a helpful assistant that provides detailed, step-by-step explanations. Break down complex topics into simple terms and verify understanding at each step.",
+    "brief": "You are a concise visual assistant for smart glasses. Respond briefly and directly. Keep answers under 3 sentences unless more detail is explicitly requested.",
+    "general": "You are a helpful AI assistant. Provide balanced, informative responses."
+}
+
 
 def delete_last_message():
     """Delete the last message from conversation history."""
@@ -881,19 +894,73 @@ def create_new_chat():
     
     print("\n" + "="*60)
     print("Alt+Key1: New chat created")
+    if SYSTEM_PROMPT:
+        print(f"System prompt: {SYSTEM_PROMPT[:50]}...")
     print("="*60 + "\n")
     play_beep(frequency=1000, duration=0.1)
 
 
 def configure_system_prompt():
-    """Placeholder for system prompt configuration via voice."""
-    global SYSTEM_PROMPT
+    """Configure system prompt via text input or preset selection."""
+    global SYSTEM_PROMPT, CURRENT_CHAT_ID
     
     print("\n" + "="*60)
-    print("Alt+Key2: System Prompt Configuration")
-    print("Feature coming soon - will capture voice prompt")
-    print("="*60 + "\n")
-    play_beep(frequency=800, duration=0.1)
+    print("System Prompt Configuration")
+    print("="*60)
+    print("\nPresets:")
+    for i, (key, prompt) in enumerate(SYSTEM_PROMPT_PRESETS.items(), 1):
+        print(f"  {i}. {key}: {prompt[:60]}...")
+    print(f"  {len(SYSTEM_PROMPT_PRESETS) + 1}. custom (enter your own)")
+    print(f"  {len(SYSTEM_PROMPT_PRESETS) + 2}. none (disable system prompt)")
+    
+    try:
+        choice = input("\nSelect option (or press Enter to cancel): ").strip()
+        
+        if not choice:
+            print("Cancelled")
+            play_beep(frequency=400, duration=0.1)
+            return
+        
+        choice_num = int(choice)
+        preset_keys = list(SYSTEM_PROMPT_PRESETS.keys())
+        
+        if 1 <= choice_num <= len(preset_keys):
+            # Select preset
+            selected_key = preset_keys[choice_num - 1]
+            SYSTEM_PROMPT = SYSTEM_PROMPT_PRESETS[selected_key]
+            print(f"\n✓ System prompt set to '{selected_key}' preset")
+            print(f"  {SYSTEM_PROMPT}")
+            
+        elif choice_num == len(preset_keys) + 1:
+            # Custom prompt
+            custom = input("\nEnter custom system prompt: ").strip()
+            if custom:
+                SYSTEM_PROMPT = custom
+                print(f"\n✓ Custom system prompt set")
+            else:
+                print("\nCancelled (empty prompt)")
+                play_beep(frequency=400, duration=0.1)
+                return
+                
+        elif choice_num == len(preset_keys) + 2:
+            # Disable
+            SYSTEM_PROMPT = None
+            print("\n✓ System prompt disabled")
+        else:
+            print("\nInvalid option")
+            play_beep(frequency=300, duration=0.2)
+            return
+        
+        # Reset chat to apply new system prompt
+        CONVERSATION_HISTORY = []
+        CURRENT_CHAT_ID = None
+        print("\nChat reset - new system prompt will apply to next message")
+        print("="*60 + "\n")
+        play_beep(frequency=1000, duration=0.1)
+        
+    except (ValueError, KeyboardInterrupt):
+        print("\nCancelled")
+        play_beep(frequency=400, duration=0.1)
 
 def process_query(audio_path: str, capture_screenshot_flag: bool, use_region_selection: bool = False):
     """Process the complete workflow: transcribe, optionally screenshot, query, display.
@@ -932,7 +999,7 @@ def process_query(audio_path: str, capture_screenshot_flag: bool, use_region_sel
         
         # Step 3: Create chat on first message
         if CURRENT_CHAT_ID is None:
-            CURRENT_CHAT_ID = create_chat_in_openwebui("Llama-3.2-11B-Vision-Instruct")
+            CURRENT_CHAT_ID = create_chat_in_openwebui("Llama-3.2-11B-Vision-Instruct", SYSTEM_PROMPT)
             if not CURRENT_CHAT_ID:
                 print("Could not create chat")
                 return
