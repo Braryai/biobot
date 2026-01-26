@@ -1,6 +1,6 @@
 # BioBot
 
-Voice-controlled AI assistant with OpenWebUI integration for frontend. Capture screenshots and ask questions using voice commands.
+Voice-controlled AI assistant with OpenWebUI integration. Capture screenshots and ask questions using voice commands.
 
 ## Overview
 
@@ -8,11 +8,13 @@ BioBot enables hands-free interaction with AI models through voice commands and 
 
 **Key Features:**
 - Push-to-talk voice recording
-- Automatic screenshot capture
-- Speech-to-text transcription
+- Automatic screenshot capture  
+- Local Speech-to-Text (offline Whisper)
 - OpenWebUI integration with RAG support
 - Vision model support for image analysis
-- Conversation history
+- Configurable system prompts via voice
+- Real-time dashboard with debug logs
+- Conversation history management
 - Configurable keyboard shortcuts
 
 ## Installation
@@ -73,12 +75,19 @@ Two modes activated by keyboard shortcuts:
 2. Speak your question
 3. Release to process
 
+### Voice Commands
+
+Available voice commands:
+- "set system prompt [text]" - Configure AI behavior
+- "new chat" - Start a new conversation
+- "delete last" - Remove last message
+
 ### Keyboard Shortcuts
 
 Configurable in `config.py`:
 - `cmd_r`: Voice + Screenshot
 - `shift_r`: Voice only
-- `cmd+r` during recording: Reset conversation
+- `esc`: Reset conversation
 
 ## Configuration
 
@@ -94,12 +103,17 @@ OPENAI_API_KEY = "your-key-here"
 **Optional:**
 ```python
 KNOWLEDGE_ID = "your-kb-id"
-DEFAULT_MODEL = "llama3.1:8b"
-USE_GROQ_STT = False
-USE_TTS = False
+DEFAULT_MODEL = "Doctor-Shotgun-L3.3-70B-Magnum-v4-SE"  # Or any model from OpenWebUI
+USE_LOCAL_WHISPER = True  # Recommended: free offline STT
+LOCAL_WHISPER_MODEL = "base.en"  # or "small", "medium", "large-v3"
+USE_GROQ_STT = False  # Alternative: Groq API
+USE_TTS = False  # Optional text-to-speech
 ```
 
 See `config.py.example` for complete documentation.
+
+**Recommended Model:**
+For best system prompt support, use `Doctor-Shotgun-L3.3-70B-Magnum-v4-SE` or similar high-quality models.
 
 
 ## Architecture
@@ -118,20 +132,39 @@ Uses OpenWebUI REST API:
 - `POST /api/v1/chats/{id}` - Save messages
 - `GET /api/models` - List models
 
+## Dashboard
+
+BioBot includes a real-time dashboard with:
+- Connection status and statistics
+- Live activity log (last transcript and response)
+- Debug logs panel for troubleshooting
+- System prompt status
+- Processing progress bar
+- Keyboard shortcuts reference
+
+The dashboard updates automatically and provides visual feedback for all operations.
+
 ## Troubleshooting
 
 **Connection Issues:**
 - Verify OpenWebUI is running
 - Check `OPENWEBUI_URL` and `OPENWEBUI_TOKEN` in config.py
-- Test connection: `python test_openwebui.py`
+- Check dashboard for connection status
 
 **Audio Issues:**
 - Grant microphone permissions to Terminal
 - Check System Preferences audio input device
+- Verify audio levels in dashboard during recording
 
 **Screenshot Issues:**
 - Grant screen recording permissions to Terminal
+- Grant accessibility permissions to Terminal
 - Verify window focus exists
+
+**System Prompt Not Working:**
+- Check debug logs panel in dashboard
+- Verify system prompt was set (shows in dashboard)
+- Ensure model supports system prompts (use recommended model)
 
 ## Development
 
@@ -147,12 +180,11 @@ biobot/
 └── docs/                  # Documentation
 ```
 
-### Testing
+### Utilities
 
 ```bash
 cd biobot-client
-python test_openwebui.py  # Test connection
-python list_models.py     # List models
+python list_models.py     # List available models in OpenWebUI
 ```
 
 ## License
