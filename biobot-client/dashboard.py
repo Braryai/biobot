@@ -32,10 +32,12 @@ class BioBotDashboard:
             "last_transcript": "",
             "last_response": "",
             "system_prompt": None,
-            "processing_step": None,  # ← NUEVO
-            "processing_progress": 0,  # ← NUEVO (0-100)
+            "processing_step": None,
+            "processing_progress": 0,
+            "debug_logs": [],  # ← NUEVO: Lista de logs de debug
         }
         self.start_time = datetime.now()
+        self.max_debug_logs = 10  # Máximo de logs a mostrar
         
     def create_ascii_logo(self) -> Text:
         """Create ASCII art logo."""
@@ -147,11 +149,12 @@ class BioBotDashboard:
         table.add_column("Description", style="bright_white")
         
         commands = [
+            ("set system prompt", "Configure AI behavior"),
             ("new chat", "Start a new conversation"),
             ("delete last", "Remove last message"),
-            ("set system prompt", "Change system prompt"),
-            ("repeat", "Repeat last response"),
-            ("retake screenshot", "Capture new screenshot"),
+            # Commented out - not yet implemented
+            # ("repeat", "Repeat last response"),
+            # ("retake screenshot", "Capture new screenshot"),
         ]
         
         for cmd, desc in commands:
@@ -160,37 +163,70 @@ class BioBotDashboard:
         return Panel(table, title="[bold green]⚡ VOICE COMMANDS", border_style="green")
     
     def create_activity_panel(self) -> Panel:
-        """Create recent activity panel."""
+        """Create detailed activity panel with debugging info."""
         content = Text()
         
-        # Current mode
+        # Current mode with timestamp
+        current_time = datetime.now().strftime("%H:%M:%S")
+        content.append(f"[{current_time}] ", style="dim white")
         content.append("MODE: ", style="cyan")
         mode_style = "bold red" if self.stats["recording"] else "green"
-        content.append(f"{self.stats['mode']}\n\n", style=mode_style)
+        content.append(f"{self.stats['mode']}\n", style=mode_style)
         
-        # Last transcript
-        if self.stats["last_transcript"]:
-            content.append("LAST INPUT:\n", style="yellow")
-            transcript_preview = self.stats["last_transcript"][:100]
-            if len(self.stats["last_transcript"]) > 100:
-                transcript_preview += "..."
-            content.append(f"  {transcript_preview}\n\n", style="white")
+        # Processing step (if active)
+        if self.stats.get("processing_step"):
+            content.append("\n⚙️  PROCESSING: ", style="yellow")
+            content.append(f"{self.stats['processing_step']}\n", style="bold cyan")
+            
+            # Progress bar
+            progress = self.stats.get("processing_progress", 0)
+            bar_width = 30
+            filled = int(bar_width * progress / 100)
+            bar = "█" * filled + "░" * (bar_width - filled)
+            content.append(f"   [{bar}] {progress}%\n", style="green")
         
-        # Last response
-        if self.stats["last_response"]:
-            content.append("LAST OUTPUT:\n", style="yellow")
-            response_preview = self.stats["last_response"][:100]
-            if len(self.stats["last_response"]) > 100:
+        # Last transcript with timestamp
+        if self.stats.get("last_transcript"):
+            content.append("\n📥 LAST INPUT:\n", style="yellow")
+            content.append(f"   {self.stats['last_transcript']}\n", style="white")
+        
+        # Last response with timestamp
+        if self.stats.get("last_response"):
+            content.append("\n📤 LAST OUTPUT:\n", style="yellow")
+            response_preview = self.stats["last_response"][:200]
+            if len(self.stats["last_response"]) > 200:
                 response_preview += "..."
-            content.append(f"  {response_preview}\n", style="white")
+            content.append(f"   {response_preview}\n", style="white")
         
         # System prompt
-        if self.stats["system_prompt"]:
-            content.append("\nSYSTEM PROMPT:\n", style="cyan")
-            prompt_preview = self.stats["system_prompt"][:80]
-            if len(self.stats["system_prompt"]) > 80:
+        if self.stats.get("system_prompt"):
+            content.append("\n🔧 SYSTEM PROMPT:\n", style="cyan")
+            prompt_preview = self.stats["system_prompt"][:100]
+            if len(self.stats["system_prompt"]) > 100:
                 prompt_preview += "..."
-            content.append(f"  {prompt_preview}", style="dim white")
+            content.append(f"   {prompt_preview}\n", style="dim white")
+        
+        # Debug info
+        content.append("\n" + "─" * 50 + "\n", style="dim white")
+        content.append("🐛 DEBUG INFO:\n", style="dim cyan")
+        
+        # Chat info
+        if self.stats.get("current_chat_id"):
+            chat_id_short = self.stats["current_chat_id"][:12] + "..."
+            content.append(f"   Chat: {chat_id_short}\n", style="dim white")
+        else:
+            content.append(f"   Chat: None\n", style="dim red")
+    
+        # Message count
+        content.append(f"   Messages: {self.stats.get('messages_sent', 0)}\n", style="dim white")
+        
+        # Model info
+        content.append(f"   Model: {self.stats.get('current_model', 'N/A')}\n", style="dim white")
+        
+        # Last error (if any)
+        if self.stats.get("last_error"):
+            content.append(f"\n❌ LAST ERROR:\n", style="red")
+            content.append(f"   {self.stats['last_error']}\n", style="dim red")
         
         return Panel(content, title="[bold green]⚡ ACTIVITY LOG", border_style="green")
     
@@ -242,6 +278,40 @@ class BioBotDashboard:
         
         return Panel(content, border_style="yellow", height=3)
     
+    def create_debug_panel(self) -> Panel:
+        """Create debug logs panel."""
+        content = Text()
+        content.append("🐛 DEBUG LOGS\n", style="bold yellow")
+        content.append("─" * 50 + "\n", style="dim white")
+        
+        if not self.stats["debug_logs"]:
+            content.append("  No debug logs yet...\n", style="dim white")
+        else:
+            # Show logs in reverse order (newest first)
+            for log in reversed(self.stats["debug_logs"]):
+                time_str = log["time"]
+                message = log["message"]
+                level = log["level"]
+                
+                # Color based on level
+                if level == "error":
+                    style = "bold red"
+                    icon = "❌"
+                elif level == "warning":
+                    style = "bold yellow"
+                    icon = "⚠️ "
+                elif level == "success":
+                    style = "bold green"
+                    icon = "✅"
+                else:  # info
+                    style = "white"
+                    icon = "ℹ️ "
+                
+                content.append(f"[{time_str}] {icon} ", style="dim cyan")
+                content.append(f"{message}\n", style=style)
+        
+        return Panel(content, title="[bold yellow]🔍 DEBUG", border_style="yellow")
+    
     def create_layout(self) -> Layout:
         """Create the main layout."""
         layout = Layout()
@@ -264,6 +334,7 @@ class BioBotDashboard:
         
         layout["right"].split_column(
             Layout(name="keyboard", size=12),
+            Layout(name="debug", size=15),  # ← NUEVO: Panel de debug
             Layout(name="voice", size=10)
         )
         
@@ -271,6 +342,7 @@ class BioBotDashboard:
         layout["header"].update(self.create_header())
         layout["connection"].update(self.create_connection_panel())
         layout["keyboard"].update(self.create_keyboard_shortcuts())
+        layout["debug"].update(self.create_debug_panel())  # ← NUEVO
         layout["voice"].update(self.create_voice_commands())
         layout["activity"].update(self.create_activity_panel())
         
@@ -282,6 +354,25 @@ class BioBotDashboard:
     def update_stats(self, **kwargs):
         """Update dashboard statistics."""
         self.stats.update(kwargs)
+    
+    def add_debug_log(self, message: str, level: str = "info"):
+        """Add a debug log message to the dashboard.
+        
+        Args:
+            message: The debug message
+            level: Log level (info, warning, error, success)
+        """
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        log_entry = {
+            "time": timestamp,
+            "message": message,
+            "level": level
+        }
+        self.stats["debug_logs"].append(log_entry)
+        
+        # Keep only last N logs
+        if len(self.stats["debug_logs"]) > self.max_debug_logs:
+            self.stats["debug_logs"] = self.stats["debug_logs"][-self.max_debug_logs:]
     
     def set_processing_step(self, step: Optional[str], progress: int = 0):
         """Update processing step and progress.

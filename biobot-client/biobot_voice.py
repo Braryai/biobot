@@ -211,10 +211,10 @@ class AudioRecorder:
     """Simple push-to-talk audio recorder."""
     def __init__(self):
         self.is_recording = False
-        self.audio_chunks = []
-        self.stream = None
-        self.capture_screenshot = True  # Track whether to capture screenshot
-        self.use_region_selection = False  # Track whether to use region selector
+        self.audio_data = None
+        self.recording_thread = None
+        self.capture_screenshot = True
+        self.use_region_selection = False
     
     def start_recording(self):
         """Start recording audio."""
@@ -222,7 +222,7 @@ class AudioRecorder:
             return
         
         self.is_recording = True
-        self.audio_chunks = []
+        self.audio_data = None
         
         if self.use_region_selection:
             mode = "with region selection"
@@ -231,38 +231,56 @@ class AudioRecorder:
         else:
             mode = "audio only"
         print(f"Recording {mode}... (release key to stop)")
-        print("   Audio levels: ", end="", flush=True)
         
-        def audio_callback(indata, frames, time_info, status):
-            if status:
-                print(f"\nStatus: {status}")
-            
-            # Calculate RMS (volume level)
-            rms = np.sqrt(np.mean(indata**2))
-            
-            # Store audio data
-            self.audio_chunks.append(indata.copy())
-            
-            # Visual feedback
-            if rms > 0.02:
-                print("█", end="", flush=True)
-            elif rms > 0.01:
-                print("▓", end="", flush=True)
-            else:
-                print(".", end="", flush=True)
+        if DASHBOARD:
+            DASHBOARD.set_processing_step("Recording audio", 5)
         
-        try:
-            self.stream = sd.InputStream(
-                samplerate=AUDIO_SAMPLE_RATE,
-                channels=AUDIO_CHANNELS,
-                dtype='float32',
-                blocksize=1024,
-                callback=audio_callback
-            )
-            self.stream.start()
-        except Exception as e:
-            print(f"\nError starting recording: {e}")
-            self.is_recording = False
+        # Start recording in background thread
+        def record_thread():
+            try:
+                # Record with visual feedback
+                print("   Audio levels: ", end="", flush=True)
+                
+                # Start recording (non-blocking)
+                self.audio_data = sd.rec(
+                    int(MAX_RECORDING_DURATION * AUDIO_SAMPLE_RATE),
+                    samplerate=AUDIO_SAMPLE_RATE,
+                    channels=AUDIO_CHANNELS,
+                    dtype='float32'
+                )
+                
+                # Visual feedback while recording
+                start_time = time.time()
+                while self.is_recording and (time.time() - start_time) < MAX_RECORDING_DURATION:
+                    # Calculate current RMS
+                    if self.audio_data is not None:
+                        current_frame = int((time.time() - start_time) * AUDIO_SAMPLE_RATE)
+                        if current_frame > 0 and current_frame < len(self.audio_data):
+                            # Get last 0.1 seconds of audio
+                            window_size = int(0.1 * AUDIO_SAMPLE_RATE)
+                            start_idx = max(0, current_frame - window_size)
+                            audio_window = self.audio_data[start_idx:current_frame]
+                            
+                            if len(audio_window) > 0:
+                                rms = np.sqrt(np.mean(audio_window**2))
+                                
+                                if rms > 0.015:
+                                    print("█", end="", flush=True)
+                                elif rms > 0.008:
+                                    print("▓", end="", flush=True)
+                                elif rms > 0.003:
+                                    print("▒", end="", flush=True)
+                                else:
+                                    print(".", end="", flush=True)
+                    
+                    time.sleep(0.1)
+                
+            except Exception as e:
+                print(f"\nRecording error: {e}")
+                self.is_recording = False
+        
+        self.recording_thread = threading.Thread(target=record_thread, daemon=True)
+        self.recording_thread.start()
     
     def stop_recording(self):
         """Stop recording and save audio file."""
@@ -272,19 +290,68 @@ class AudioRecorder:
         self.is_recording = False
         
         try:
-            if self.stream:
-                self.stream.stop()
-                self.stream.close()
-                self.stream = None
+            # Stop recording
+            sd.stop()
+            
+            # Wait for recording thread to finish
+            if self.recording_thread:
+                self.recording_thread.join(timeout=1.0)
             
             print("\nRecording stopped")
             
-            if not self.audio_chunks:
+            if self.audio_data is None or len(self.audio_data) == 0:
                 print("No audio recorded")
                 return None
             
-            # Combine all chunks
-            audio_data = np.concatenate(self.audio_chunks, axis=0)
+            # Trim silence from end (keep only recorded portion)
+            # Find last non-silent frame
+            rms_threshold = 0.001
+            last_sound_idx = len(self.audio_data)
+            
+            for i in range(len(self.audio_data) - 1, 0, -int(0.1 * AUDIO_SAMPLE_RATE)):
+                window = self.audio_data[max(0, i - int(0.1 * AUDIO_SAMPLE_RATE)):i]
+                if len(window) > 0:
+                    rms = np.sqrt(np.mean(window**2))
+                    if rms > rms_threshold:
+                        last_sound_idx = i
+                        break
+            
+            # Trim to actual recording
+            audio_data = self.audio_data[:last_sound_idx]
+            
+            if len(audio_data) == 0:
+                print("No audio detected")
+                return None
+            
+            # ========== DEBUG: Audio info ==========
+            duration = len(audio_data) / AUDIO_SAMPLE_RATE
+            max_amplitude_raw = np.max(np.abs(audio_data))
+            rms_raw = np.sqrt(np.mean(audio_data**2))
+            
+            print(f"\n🔍 [DEBUG] Audio Recording Analysis:")
+            print(f"   Total samples: {len(audio_data):,}")
+            print(f"   Duration: {duration:.2f} seconds")
+            print(f"   Max amplitude (raw): {max_amplitude_raw:.4f}")
+            print(f"   RMS (raw): {rms_raw:.4f}")
+            
+            if duration < 0.3:
+                print(f"   ⚠️  WARNING: Audio muy corto ({duration:.2f}s)")
+            
+            if max_amplitude_raw < 0.01:
+                print(f"   ⚠️  WARNING: Audio muy bajo (max: {max_amplitude_raw:.4f})")
+            # ========================================
+            
+            # ========== NORMALIZACIÓN ==========
+            # Remove DC offset
+            audio_data = audio_data - np.mean(audio_data)
+            
+            # Normalize volume
+            max_amplitude = np.max(np.abs(audio_data))
+            if max_amplitude > 0:
+                audio_data = audio_data * (0.9 / max_amplitude)
+            
+            print(f"   Max amplitude (normalized): {np.max(np.abs(audio_data)):.4f}")
+            # ===================================
             
             # Save to WAV file
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -295,16 +362,34 @@ class AudioRecorder:
             
             with wave.open(str(audio_path), 'wb') as wf:
                 wf.setnchannels(AUDIO_CHANNELS)
-                wf.setsampwidth(2)  # 2 bytes for int16
+                wf.setsampwidth(2)
                 wf.setframerate(AUDIO_SAMPLE_RATE)
                 wf.writeframes(audio_int16.tobytes())
             
-            duration = len(audio_data) / AUDIO_SAMPLE_RATE
-            print(f"Audio saved: {audio_path} ({duration:.1f} seconds)")
+            file_size = audio_path.stat().st_size / 1024
+            print(f"\n✓ Audio saved: {audio_path}")
+            print(f"   File size: {file_size:.1f} KB")
+            
+            # ========== DEBUG: Verify WAV ==========
+            try:
+                with wave.open(str(audio_path), 'rb') as wf:
+                    print(f"\n🔍 [DEBUG] WAV File Verification:")
+                    print(f"   Channels: {wf.getnchannels()}")
+                    print(f"   Sample rate: {wf.getframerate()} Hz")
+                    print(f"   Duration: {wf.getnframes() / wf.getframerate():.2f}s")
+            except Exception as e:
+                print(f"   ⚠️  Could not verify WAV: {e}")
+            # =======================================
+            
             return audio_path
             
         except Exception as e:
-            print(f"Error stopping recording: {e}")
+            error_msg = f"Error stopping recording: {e}"
+            print(error_msg)
+            import traceback
+            traceback.print_exc()
+            if DASHBOARD:
+                DASHBOARD.update_stats(last_error=error_msg)
             return None
 
 
@@ -321,27 +406,122 @@ def transcribe_audio(audio_path: str) -> Optional[str]:
                 
                 print(f"   Using local Whisper ({LOCAL_WHISPER_MODEL})...")
                 
+                if DASHBOARD:
+                    DASHBOARD.set_processing_step("Transcribing (local)", 20)
+
                 # Load model (cached after first run)
-                model = WhisperModel(LOCAL_WHISPER_MODEL, device="cpu", compute_type="int8")
+                model = WhisperModel(
+                    LOCAL_WHISPER_MODEL, 
+                    device="cpu", 
+                    compute_type="int8", 
+                    num_workers=4, 
+                    download_root=None
+                )
                 
+                print(f"\n🔍 [DEBUG] Pre-Transcription Check:")
+                audio_file = Path(audio_path)
+                if not audio_file.exists():
+                    print(f"   ❌ File does not exist: {audio_path}")
+                    if DASHBOARD:
+                        DASHBOARD.update_stats(last_error="Audio file not found")
+                        DASHBOARD.set_processing_step(None, 0)
+                    return None
+
+                file_size = audio_file.stat().st_size
+                print(f"   File: {audio_path}")
+                print(f"   Size: {file_size / 1024:.1f} KB")
+
+                # Verify WAV file is valid
+                try:
+                    import wave
+                    with wave.open(audio_path, 'rb') as wf:
+                        print(f"   Channels: {wf.getnchannels()}")
+                        print(f"   Sample rate: {wf.getframerate()} Hz")
+                        print(f"   Duration: {wf.getnframes() / wf.getframerate():.2f}s")
+                        
+                        # Check if duration is too short
+                        wav_duration = wf.getnframes() / wf.getframerate()
+                        if wav_duration < 0.3:
+                            print(f"   ⚠️  WARNING: Audio muy corto para transcribir")
+                except Exception as e:
+                    print(f"   ⚠️  Invalid WAV file: {e}")
+                # ===================================================================
+
                 # Transcribe
-                segments, info = model.transcribe(audio_path, beam_size=5)
-                transcript = " ".join([segment.text for segment in segments])
+                print(f"\n🔊 Starting Whisper transcription...")
+                segments, info = model.transcribe(
+                    audio_path, 
+                    beam_size=5, 
+                    language="en",
+                    condition_on_previous_text=False,
+                    vad_filter=True,
+                    vad_parameters=dict(
+                        min_silence_duration_ms=300,  # ← BAJADO de 500 a 300
+                        threshold=0.3  # ← Ya estaba en 0.3
+                    ),
+                    temperature=0.0, 
+                    compression_ratio_threshold=2.4,
+                    log_prob_threshold=-1.0,
+                    no_speech_threshold=0.8
+                )
+
+                print(f"✓ Whisper finished, processing segments...")
+                
+                # Extraer texto de segmentos
+                transcript_parts = []
+                for segment in segments:
+                    text = segment.text.strip()
+                    if text:  # Only add non-empty segments
+                        transcript_parts.append(text)
+                        # Debug: mostrar confianza de cada segmento
+                        print(f"   [{segment.start:.1f}s - {segment.end:.1f}s] {text}")
+                
+                transcript = " ".join(transcript_parts)
+                
+                # Detected language information
+                print(f"   Detected language: {info.language} (probability: {info.language_probability:.2f})")
+                print(f"   Duration: {info.duration:.1f}s")
+                
+                if not transcript:
+                    print("⚠️  No se detectó voz en el audio")
+                    if DASHBOARD:
+                        DASHBOARD.update_stats(
+                            last_error="No speech detected in audio",
+                            mode="Idle"
+                        )
+                        DASHBOARD.set_processing_step(None, 0)  # ← LIMPIAR AQUÍ
+                    return None
                 
                 print(f"Transcription: \"{transcript}\"")
+                
+                # ← LIMPIAR DASHBOARD ANTES DE RETORNAR ÉXITO
+                if DASHBOARD:
+                    DASHBOARD.set_processing_step(None, 0)
+                
                 return transcript.strip()
                 
             except ImportError:
                 print("faster-whisper not installed, falling back to API...")
                 print("   Install with: pip install faster-whisper")
+                if DASHBOARD:
+                    DASHBOARD.update_stats(last_error="faster-whisper not installed")
+                    DASHBOARD.set_processing_step(None, 0)  # ← LIMPIAR
                 # Fall through to API options
             except Exception as e:
-                print(f"Local Whisper error: {e}, falling back to API...")
+                error_msg = f"Local Whisper error: {e}"
+                print(error_msg)
+                if DASHBOARD:
+                    DASHBOARD.update_stats(last_error=error_msg, mode="Idle")
+                    DASHBOARD.set_processing_step(None, 0)  # ← LIMPIAR
                 # Fall through to API options
         
         # Option 2: Groq API - FREE (for now) & FAST
         if USE_GROQ_STT and GROQ_API_KEY:
             print("   Using Groq Whisper API...")
+            
+            if DASHBOARD:
+                DASHBOARD.set_processing_step("Transcribing (Groq)", 20)
+            
             client = OpenAI(
                 api_key=GROQ_API_KEY,
                 base_url="https://api.groq.com/openai/v1"
@@ -349,17 +529,28 @@ def transcribe_audio(audio_path: str) -> Optional[str]:
             
             with open(audio_path, "rb") as audio_file:
                 transcript = client.audio.transcriptions.create(
-                    model="whisper-large-v3",
+                    model="whisper-large-v3-turbo",
                     file=audio_file,
-                    response_format="text"
+                    response_format="verbose_json",
+                    language="en",
+                    temperature=0.0
                 )
             
-            print(f"Transcription: \"{transcript}\"")
-            return transcript.strip()
+            transcript_text = transcript.text if hasattr(transcript, 'text') else str(transcript)
+            print(f"Transcription: \"{transcript_text}\"")
+            
+            if DASHBOARD:
+                DASHBOARD.set_processing_step(None, 0)  # ← LIMPIAR
+            
+            return transcript_text.strip()
         
         # Option 3: OpenAI API - PAID but RELIABLE
         if OPENAI_API_KEY and not OPENAI_API_KEY.startswith("your-"):
             print("   Using OpenAI Whisper API...")
+            
+            if DASHBOARD:
+                DASHBOARD.set_processing_step("Transcribing (OpenAI)", 20)
+            
             client = OpenAI(api_key=OPENAI_API_KEY)
             
             with open(audio_path, "rb") as audio_file:
@@ -370,6 +561,10 @@ def transcribe_audio(audio_path: str) -> Optional[str]:
                 )
             
             print(f"Transcription: \"{transcript}\"")
+            
+            if DASHBOARD:
+                DASHBOARD.set_processing_step(None, 0)  # ← LIMPIAR
+            
             return transcript.strip()
         
         # No valid STT option configured
@@ -378,10 +573,19 @@ def transcribe_audio(audio_path: str) -> Optional[str]:
         print("   - USE_LOCAL_WHISPER = True (free, offline)")
         print("   - USE_GROQ_STT = True with GROQ_API_KEY")
         print("   - Set OPENAI_API_KEY")
+        
+        if DASHBOARD:
+            DASHBOARD.update_stats(last_error="No STT service configured", mode="Idle")
+            DASHBOARD.set_processing_step(None, 0)  # ← LIMPIAR
+        
         return None
         
     except Exception as e:
-        print(f"Error transcribing audio: {e}")
+        error_msg = f"Error transcribing audio: {e}"
+        print(error_msg)
+        if DASHBOARD:
+            DASHBOARD.update_stats(last_error=error_msg, mode="Idle")
+            DASHBOARD.set_processing_step(None, 0)  # ← LIMPIAR
         return None
 
 
@@ -705,11 +909,35 @@ def query_openwebui(query_text: str, screenshot_path: Optional[str] = None, conv
     try:
         print("Querying model...")
         
+        # DEBUG: Verificar variable global
+        if DASHBOARD:
+            DASHBOARD.add_debug_log(f"SYSTEM_PROMPT en query: '{SYSTEM_PROMPT}'", "info")
+        
         # Choose model based on whether we have a screenshot
         model_to_use = DEFAULT_MODEL if screenshot_path else TEXT_ONLY_MODEL
         
-        # Build messages array with conversation history
+        # Update dashboard with current model
+        if DASHBOARD:
+            DASHBOARD.update_stats(current_model=model_to_use)
+        
+        # Build messages array with system prompt if set
         messages = []
+        
+        # Add system prompt at the beginning if configured
+        if SYSTEM_PROMPT:
+            messages.append({
+                "role": "system",
+                "content": SYSTEM_PROMPT
+            })
+            if DASHBOARD:
+                DASHBOARD.add_debug_log(f"✅ System prompt añadido: {SYSTEM_PROMPT[:30]}...", "success")
+            print(f"   ✅ System prompt añadido al request: {SYSTEM_PROMPT[:50]}...")
+        else:
+            if DASHBOARD:
+                DASHBOARD.add_debug_log("⚠️  NO hay system prompt", "warning")
+            print(f"   ⚠️  NO hay system prompt configurado (SYSTEM_PROMPT es None o vacío)")
+        
+        # Add conversation history
         if conversation_history:
             messages.extend(conversation_history)
             print(f"   📜 Including {len(conversation_history)} previous messages")
@@ -717,10 +945,17 @@ def query_openwebui(query_text: str, screenshot_path: Optional[str] = None, conv
         # Add current user message with inline base64 if image
         if screenshot_path:
             image_base64 = encode_image_to_base64(screenshot_path)
+            vision_system_prompt = (
+                "You are a visual AI assistant. You can see and analyze images. "
+                "When the user asks about 'this' or 'the image', refer to the screenshot they've shared. "
+                "Describe what you see in detail and answer their questions about the visual content. "
+                "Be direct and specific about what's visible in the image."
+            )
             messages.append({
                 "role": "user",
                 "content": [
                     {"type": "text", "text": query_text},
+                    {"type": "text", "text": vision_system_prompt},
                     {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}}
                 ]
             })
@@ -739,12 +974,16 @@ def query_openwebui(query_text: str, screenshot_path: Optional[str] = None, conv
         payload = {
             "model": model_to_use,
             "messages": messages,
-            "stream": False
+            "stream": False,
+            "temperature": 0.7
         }
         
         # Send request (only to get response, NOT for persistence)
         url = f"{OPENWEBUI_URL}/api/chat/completions"
         print(f"   Using model: {model_to_use}")
+
+        if DASHBOARD:
+            DASHBOARD.set_processing_step("Querying model", 70)
         
         with httpx.Client(timeout=180.0) as client:
             response = client.post(url, json=payload, headers=headers)
@@ -767,14 +1006,20 @@ def query_openwebui(query_text: str, screenshot_path: Optional[str] = None, conv
         }
         
     except httpx.HTTPStatusError as e:
-        print(f"HTTP Error {e.response.status_code}: {e.response.text}")
+        error_msg = f"HTTP Error {e.response.status_code}: {e.response.text}"
+        if DASHBOARD:
+            DASHBOARD.update_stats(last_error=error_msg)
         return None
     except httpx.RequestError as e:
-        print(f"Request Error: {e}")
+        error_msg = f"Request Error: {e}"
+        if DASHBOARD:
+            DASHBOARD.update_stats(last_error=error_msg)
         print("   Is Open WebUI running? Check the URL in config.py")
         return None
     except Exception as e:
-        print(f"Error querying Open WebUI: {e}")
+        error_msg = f"Error querying Open WebUI: {e}"
+        if DASHBOARD:
+            DASHBOARD.update_stats(last_error=error_msg)
         return None
 
 
@@ -921,49 +1166,74 @@ def classify_or_enhance_transcript(transcript: str, context: Optional[str] = Non
         return {"type": "error", "error": str(e)}
 
 
-# ============ SYSTEM PROMPT PATCH FOR EXISTING CHAT ============
-def patch_system_prompt(chat_id: str, new_prompt: str) -> bool:
-    """Patch the system prompt of an existing chat in OpenWebUI."""
-    url = f"{OPENWEBUI_URL}/api/v1/chats/{chat_id}"
-    headers = {
-        "Authorization": f"Bearer {OPENWEBUI_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    payload = {"chat": {"params": {"system": new_prompt}}}
-    try:
-        with httpx.Client(timeout=10.0) as client:
-            response = client.patch(url, json=payload, headers=headers)
-            response.raise_for_status()
-            print(f"[System Prompt] Updated for chat {chat_id}")
-            return True
-    except Exception as e:
-        print(f"[System Prompt] Failed to update: {e}")
-        return False
+# ============ SYSTEM PROMPT MANAGEMENT ============
+# System prompt is included in every /api/chat/completions request
+# by adding a "system" role message at the beginning of the messages array.
+# This is simpler and more efficient than recreating chats.
+
 
 
 # ============ COMMAND ROUTER ============
 def handle_voice_command(command: str, arg: Optional[str] = None):
     """Route recognized command to the correct function."""
+    global SYSTEM_PROMPT, DASHBOARD, CURRENT_CHAT_ID, CONVERSATION_HISTORY
+    
     cmd = command.lower().strip()
-    if cmd.startswith("set system prompt") and arg:
-        # Patch current chat's system prompt
-        if CURRENT_CHAT_ID:
-            ok = patch_system_prompt(CURRENT_CHAT_ID, arg)
-            if ok:
-                print(f"[Command] System prompt updated in current chat: {arg}")
-            else:
-                print(f"[Command] Failed to update system prompt in chat")
+    
+    if cmd.startswith("set system prompt"):
+        print("\n" + "="*60)
+        print("🎤 COMANDO: Set System Prompt")
+        print("="*60)
+        
+        # Configurar system prompt
+        if arg:
+            new_prompt = arg.strip()
+            
+            if DASHBOARD:
+                DASHBOARD.add_debug_log(f"ANTES: SYSTEM_PROMPT = '{SYSTEM_PROMPT}'", "info")
+                DASHBOARD.add_debug_log(f"Asignando: '{new_prompt}'", "info")
+            
+            SYSTEM_PROMPT = new_prompt
+            
+            if DASHBOARD:
+                DASHBOARD.add_debug_log(f"DESPUÉS: SYSTEM_PROMPT = '{SYSTEM_PROMPT}'", "success")
+            
+            print(f"\n✅ System prompt configurado:")
+            print(f"   '{new_prompt}'")
+            print(f"\n💡 El system prompt se aplicará automáticamente en cada mensaje")
+            
+            play_beep(frequency=1000, duration=0.1)
+            time.sleep(0.1)
+            play_beep(frequency=1200, duration=0.1)
+            
+            if DASHBOARD:
+                DASHBOARD.update_stats(
+                    mode="✅ System prompt set",
+                    system_prompt=new_prompt
+                )
         else:
-            print("[Command] No active chat to update system prompt.")
+            print("⚠️  No se proporcionó texto para el system prompt")
+            print("   Ejemplo: 'set system prompt: eres un experto en datacenters'")
+            play_beep(frequency=300, duration=0.3)
+        
+        print("="*60 + "\n")
+    
     elif cmd == "new chat":
         create_new_chat()
-        print("[Command] New chat created.")
+        print("✅ Nuevo chat creado")
+        if DASHBOARD:
+            DASHBOARD.update_stats(mode="New chat created")
+    
     elif cmd == "delete last":
         delete_last_message()
-        print("[Command] Last message deleted.")
-    # ...add more command handlers as needed...
+        print("✅ Último mensaje eliminado")
+        if DASHBOARD:
+            DASHBOARD.update_stats(mode="Last message deleted")
+    
     else:
-        print(f"[Command] Unrecognized or unimplemented command: {command}")
+        print(f"⚠️  Comando no reconocido: {command}")
+        if DASHBOARD:
+            DASHBOARD.update_stats(mode="Unknown command")
 
 
 # ============ MAIN PROCESSING FUNCTION ============
@@ -1117,29 +1387,64 @@ def process_query(audio_path: str, capture_screenshot_flag: bool, use_region_sel
         # Step 1.5: Classify/enhance with keyword matching
         if DASHBOARD:
             DASHBOARD.update_stats(mode="Analyzing command...")
-        
-        context = None
-        if CONVERSATION_HISTORY:
-            context = "\n".join([m["content"] if isinstance(m, dict) and "content" in m else str(m) for m in CONVERSATION_HISTORY[-3:]])
-        
-        # Simple keyword-based command detection
+
         transcript_lower = message_text.lower().strip()
-        is_command = False
-        
-        command_keywords = {
-            "new chat": ["new chat", "start new chat", "reset chat", "fresh chat"],
-            "delete last": ["delete last", "remove last", "undo last"],
-            "set system prompt": ["set system prompt", "change system prompt", "system prompt"],
-        }
-        
-        for command, keywords in command_keywords.items():
-            for keyword in keywords:
-                if keyword in transcript_lower:
-                    print(f"[Command] Detected: {command}")
-                    handle_voice_command(command)
-                    if DASHBOARD:
-                        DASHBOARD.update_stats(mode="Idle")
-                    return
+
+        # Detect "set system prompt" command (with argument extraction)
+        if "set system prompt" in transcript_lower or "change system prompt" in transcript_lower:
+            # Extract text after command
+            if "set system prompt" in transcript_lower:
+                keyword = "set system prompt"
+            else:
+                keyword = "change system prompt"
+            
+            idx = transcript_lower.find(keyword)
+            arg = message_text[idx + len(keyword):].strip()
+            
+            # Limpiar conectores comunes (: to, etc.)
+            if arg.startswith(":"):
+                arg = arg[1:].strip()
+            if arg.startswith("to"):
+                arg = arg[2:].strip()
+            
+            if not arg:
+                print("⚠️  No se proporcionó texto para el system prompt")
+                print("   Ejemplo: 'set system prompt: eres un experto en datacenters'")
+                play_beep(frequency=300, duration=0.3)
+                if DASHBOARD:
+                    DASHBOARD.update_stats(mode="Idle")
+                return
+            
+            print(f"[Command] Detected: set system prompt")
+            print(f"[Argument] '{arg}'")
+            
+            if DASHBOARD:
+                DASHBOARD.update_stats(mode="Applying system prompt...")
+            
+            handle_voice_command("set system prompt", arg)
+            
+            if DASHBOARD:
+                DASHBOARD.update_stats(mode="Idle")
+            return
+
+        # Detectar comando "new chat"
+        if any(phrase in transcript_lower for phrase in ["new chat", "start new chat", "reset chat"]):
+            print(f"[Command] Detected: new chat")
+            handle_voice_command("new chat")
+            if DASHBOARD:
+                DASHBOARD.update_stats(mode="Idle")
+            return
+
+        # Detectar comando "delete last"
+        if any(phrase in transcript_lower for phrase in ["delete last", "remove last", "undo last"]):
+            print(f"[Command] Detected: delete last")
+            handle_voice_command("delete last")
+            if DASHBOARD:
+                DASHBOARD.update_stats(mode="Idle")
+            return
+
+        # No es comando - continuar con query normal
+        print(f"[Query] Processing: {message_text}")
         
         # Not a command - enhance query if needed (optional)
         # For now, just use the transcript as-is
@@ -1333,14 +1638,6 @@ def on_press(key, recorder, trigger_key_screenshot=None, trigger_key_audio=None)
     try:
         from pynput.keyboard import Key
 
-        # DEBUG: Print key info for troubleshooting
-        print(f"[DEBUG] Key pressed: {key}")
-        print(f"[DEBUG]   type: {type(key)}")
-        if hasattr(key, 'vk'): print(f"[DEBUG]   vk: {getattr(key, 'vk', None)}")
-        if hasattr(key, 'char'): print(f"[DEBUG]   char: {getattr(key, 'char', None)}")
-        if hasattr(key, 'name'): print(f"[DEBUG]   name: {getattr(key, 'name', None)}")
-        if hasattr(key, 'value'): print(f"[DEBUG]   value: {getattr(key, 'value', None)}")
-
         # ESC = Reset conversation
         if key == Key.esc:
             if CONVERSATION_HISTORY or CURRENT_CHAT_ID:
@@ -1384,7 +1681,7 @@ def on_press(key, recorder, trigger_key_screenshot=None, trigger_key_audio=None)
         if recorder.is_recording:
             return
 
-        # Key 1 (Right Cmd) combinations
+        # ========== KEY 1 COMBINATIONS (Screenshot + Audio) ==========
         if is_key1:
             # Ctrl + Key1 = Delete last message
             if 'ctrl' in MODIFIER_KEYS_PRESSED:
@@ -1413,7 +1710,7 @@ def on_press(key, recorder, trigger_key_screenshot=None, trigger_key_audio=None)
             recorder.capture_screenshot = True
             recorder.start_recording()
 
-        # Key 2 (Right Shift) combinations
+        # ========== KEY 2 COMBINATIONS (Audio Only) ==========
         elif is_key2:
             # Alt + Key2 = Configure system prompt
             if 'alt' in MODIFIER_KEYS_PRESSED:
@@ -1426,33 +1723,6 @@ def on_press(key, recorder, trigger_key_screenshot=None, trigger_key_audio=None)
                 DASHBOARD.update_stats(mode="Recording (Audio Only)", recording=True)
             recorder.use_region_selection = False
             recorder.capture_screenshot = False
-            recorder.start_recording()
-
-            # Just Key1 = Screenshot + audio
-            play_double_beep()
-            recorder.use_region_selection = False
-            recorder.capture_screenshot = True
-            key_display = key1.replace('_r', ' (Right)').replace('_', ' ').title()
-            print("\n" + "="*60)
-            print(f"{key_display}: Recording with screenshot...")
-            print("="*60)
-            recorder.start_recording()
-
-        # Key 2 (Right Shift) combinations
-        elif is_key2:
-            # Alt + Key2 = Configure system prompt
-            if 'alt' in MODIFIER_KEYS_PRESSED:
-                configure_system_prompt()
-                return
-
-            # Just Key2 = Audio only
-            play_start_beep()
-            recorder.use_region_selection = False
-            recorder.capture_screenshot = False
-            key_display = key2.replace('_r', ' (Right)').replace('_', ' ').title()
-            print("\n" + "="*60)
-            print(f"{key_display}: Recording audio only...")
-            print("="*60)
             recorder.start_recording()
 
     except Exception as e:
