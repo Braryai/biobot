@@ -20,3 +20,6 @@ httpx>=0.24.0
 # macOS window capture (PyObjC frameworks)
 pyobjc-framework-Quartz>=10.0
 pyobjc-framework-Cocoa>=10.0
+
+# Rich terminal UI (for dashboard)
+rich>=13.0.0
