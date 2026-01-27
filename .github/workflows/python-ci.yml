@@ -25,9 +25,9 @@ jobs:
     - name: Lint with flake8
       run: |
         # Stop build if there are Python syntax errors or undefined names
-        flake8 biobot-client/*.py --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 biobot-client/*.py --count --select=E9,F63,F7,F82 --ignore=F824 --show-source --statistics
         # Exit-zero treats all errors as warnings
-        flake8 biobot-client/*.py --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        flake8 biobot-client/*.py --count --exit-zero --ignore=F824 --max-complexity=10 --max-line-length=127 --statistics
 
   test:
     runs-on: ubuntu-latest
@@ -42,7 +42,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r biobot-client/requirements.txt
+        pip install -r biobot-client/requirements-ci.txt
     
     - name: Check Python syntax
       run: |

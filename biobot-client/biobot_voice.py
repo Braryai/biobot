@@ -1566,7 +1566,7 @@ def classify_or_enhance_transcript(transcript: str, context: Optional[str] = Non
 # ============ COMMAND ROUTER ============
 def handle_voice_command(command: str, arg: Optional[str] = None):
     """Route recognized command to the correct function."""
-    global SYSTEM_PROMPT, DASHBOARD, CURRENT_CHAT_ID, CONVERSATION_HISTORY
+    global SYSTEM_PROMPT, CURRENT_CHAT_ID, CONVERSATION_HISTORY
     global CURRENT_KNOWLEDGE_BASE_ID, CURRENT_KNOWLEDGE_BASE_NAME
     
     cmd = command.lower().strip()
