@@ -34,6 +34,7 @@ LIVE_DISPLAY = None
 # Import configuration
 try:
     from config import (
+        USE_OPENWEBUI,
         OPENAI_API_KEY,
         OPENAI_STT_MODEL,
         TRIGGER_KEY_WITH_SCREENSHOT,
@@ -56,6 +57,14 @@ try:
         TTS_SPEED,
         TTS_LANG_CODE
     )
+    
+    # Import standalone mode configs
+    try:
+        from config import STANDALONE_MODEL, STANDALONE_VISION_MODEL
+    except ImportError:
+        # Fallback if not defined in config
+        STANDALONE_MODEL = "Qwen-Qwen3-30B-A3B"
+        STANDALONE_VISION_MODEL = "meta-llama/Llama-3.2-11B-Vision-Instruct"
 except ImportError:
     print("Error: config.py not found!")
     print("Please create config.py with your settings.")
@@ -776,6 +785,101 @@ def encode_image_to_base64(image_path: str) -> str:
         return base64.b64encode(image_file.read()).decode('utf-8')
 
 
+# ============ KNOWLEDGE BASE FUNCTIONS ============
+
+def list_knowledge_bases() -> List[Dict[str, Any]]:
+    """List all available knowledge bases from Open WebUI.
+    
+    Uses: GET /api/v1/knowledge/
+    
+    Returns:
+        List of knowledge bases with id, name, description
+    """
+    try:
+        headers = {
+            "Authorization": f"Bearer {OPENWEBUI_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        
+        url = f"{OPENWEBUI_URL}/api/v1/knowledge/"
+        
+        with httpx.Client(timeout=10.0) as client:
+            response = client.get(url, headers=headers)
+            response.raise_for_status()
+        
+        result = response.json()
+        knowledge_bases = result.get("items", [])
+        
+        if DASHBOARD:
+            DASHBOARD.add_debug_log(f"Found {len(knowledge_bases)} knowledge bases", "info")
+        
+        return knowledge_bases
+        
+    except Exception as e:
+        print(f"Error listing knowledge bases: {e}")
+        if DASHBOARD:
+            DASHBOARD.add_debug_log(f"Error listing KBs: {e}", "error")
+        return []
+
+
+def get_knowledge_base_by_id(kb_id: str) -> Optional[Dict[str, Any]]:
+    """Get knowledge base details by ID.
+    
+    Uses: GET /api/v1/knowledge/{id}
+    
+    Args:
+        kb_id: Knowledge base ID
+        
+    Returns:
+        Knowledge base details or None if not found
+    """
+    try:
+        headers = {
+            "Authorization": f"Bearer {OPENWEBUI_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        
+        url = f"{OPENWEBUI_URL}/api/v1/knowledge/{kb_id}"
+        
+        with httpx.Client(timeout=10.0) as client:
+            response = client.get(url, headers=headers)
+            response.raise_for_status()
+        
+        return response.json()
+        
+    except Exception as e:
+        print(f"Error getting knowledge base {kb_id}: {e}")
+        if DASHBOARD:
+            DASHBOARD.add_debug_log(f"Error getting KB {kb_id}: {e}", "error")
+        return None
+
+
+def set_knowledge_base(kb_id: str, kb_name: str = None):
+    """Set the current active knowledge base.
+    
+    Args:
+        kb_id: Knowledge base ID to activate
+        kb_name: Optional name (will be fetched if not provided)
+    """
+    global CURRENT_KNOWLEDGE_BASE_ID, CURRENT_KNOWLEDGE_BASE_NAME, DASHBOARD
+    
+    CURRENT_KNOWLEDGE_BASE_ID = kb_id
+    
+    if kb_name is None:
+        # Fetch the name
+        kb_details = get_knowledge_base_by_id(kb_id)
+        if kb_details:
+            kb_name = kb_details.get("name", "Unknown")
+    
+    CURRENT_KNOWLEDGE_BASE_NAME = kb_name
+    
+    print(f"✅ Knowledge base set: {kb_name} ({kb_id})")
+    
+    if DASHBOARD:
+        DASHBOARD.add_debug_log(f"KB activated: {kb_name}", "success")
+        DASHBOARD.update_stats(knowledge_base=kb_name)
+
+
 def create_chat_in_openwebui(model: str, system_prompt: Optional[str] = None) -> Optional[str]:
     """Create a new chat in Open WebUI and return the chat ID."""
     try:
@@ -920,22 +1024,27 @@ def query_openwebui(query_text: str, screenshot_path: Optional[str] = None, conv
         if DASHBOARD:
             DASHBOARD.update_stats(current_model=model_to_use)
         
-        # Build messages array with system prompt if set
+        # Build messages array with system prompt
         messages = []
         
-        # Add system prompt at the beginning if configured
+        # Always include BASE_SYSTEM_PROMPT + optional custom SYSTEM_PROMPT
+        combined_prompt = BASE_SYSTEM_PROMPT
+        
         if SYSTEM_PROMPT:
-            messages.append({
-                "role": "system",
-                "content": SYSTEM_PROMPT
-            })
+            # Append custom prompt to base
+            combined_prompt = f"{BASE_SYSTEM_PROMPT}\n\nADDITIONAL INSTRUCTIONS:\n{SYSTEM_PROMPT}"
             if DASHBOARD:
-                DASHBOARD.add_debug_log(f"✅ System prompt añadido: {SYSTEM_PROMPT[:30]}...", "success")
-            print(f"   ✅ System prompt añadido al request: {SYSTEM_PROMPT[:50]}...")
+                DASHBOARD.add_debug_log(f"✅ Base + Custom prompt", "success")
+            print(f"   ✅ Using BASE + custom system prompt")
         else:
             if DASHBOARD:
-                DASHBOARD.add_debug_log("⚠️  NO hay system prompt", "warning")
-            print(f"   ⚠️  NO hay system prompt configurado (SYSTEM_PROMPT es None o vacío)")
+                DASHBOARD.add_debug_log("ℹ️  Using BASE system prompt only", "info")
+            print(f"   ℹ️  Using BASE system prompt (no custom prompt set)")
+        
+        messages.append({
+            "role": "system",
+            "content": combined_prompt
+        })
         
         # Add conversation history
         if conversation_history:
@@ -977,6 +1086,19 @@ def query_openwebui(query_text: str, screenshot_path: Optional[str] = None, conv
             "stream": False,
             "temperature": 0.7
         }
+        
+        # Add knowledge base (RAG) if configured
+        if CURRENT_KNOWLEDGE_BASE_ID:
+            payload["files"] = [
+                {
+                    "type": "collection",
+                    "id": CURRENT_KNOWLEDGE_BASE_ID,
+                    "name": CURRENT_KNOWLEDGE_BASE_NAME or "Knowledge Base"
+                }
+            ]
+            print(f"   📚 Using knowledge base: {CURRENT_KNOWLEDGE_BASE_NAME}")
+            if DASHBOARD:
+                DASHBOARD.add_debug_log(f"RAG enabled: {CURRENT_KNOWLEDGE_BASE_NAME}", "success")
         
         # Send request (only to get response, NOT for persistence)
         url = f"{OPENWEBUI_URL}/api/chat/completions"
@@ -1023,13 +1145,177 @@ def query_openwebui(query_text: str, screenshot_path: Optional[str] = None, conv
         return None
 
 
+def query_standalone(query_text: str, screenshot_path: Optional[str] = None, conversation_history: Optional[List[Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
+    """Query AI model directly using TotalGPT API (standalone mode, no OpenWebUI).
+    
+    This mode:
+    - Uses TotalGPT API for completions
+    - No chat persistence
+    - No knowledge base support
+    - Ideal for quick questions
+    """
+    global DASHBOARD
+    
+    try:
+        print("Querying model (standalone mode)...")
+        
+        if DASHBOARD:
+            DASHBOARD.add_debug_log("Standalone mode: Using TotalGPT API", "info")
+        
+        # Choose model based on whether we have a screenshot
+        model_to_use = STANDALONE_VISION_MODEL if screenshot_path else STANDALONE_MODEL
+        
+        # Update dashboard with current model
+        if DASHBOARD:
+            DASHBOARD.update_stats(current_model=f"{model_to_use} (standalone)")
+        
+        # Build messages array with system prompt
+        messages = []
+        
+        # Always include BASE_SYSTEM_PROMPT + optional custom SYSTEM_PROMPT
+        combined_prompt = BASE_SYSTEM_PROMPT
+        
+        if SYSTEM_PROMPT:
+            combined_prompt = f"{BASE_SYSTEM_PROMPT}\n\nADDITIONAL INSTRUCTIONS:\n{SYSTEM_PROMPT}"
+            if DASHBOARD:
+                DASHBOARD.add_debug_log("BASE + Custom prompt", "success")
+            print(f"   ✅ Using BASE + custom system prompt")
+        else:
+            if DASHBOARD:
+                DASHBOARD.add_debug_log("Using BASE system prompt only", "info")
+            print(f"   ℹ️  Using BASE system prompt")
+        
+        messages.append({
+            "role": "system",
+            "content": combined_prompt
+        })
+        
+        # Add conversation history (if keeping in memory for session)
+        if conversation_history:
+            messages.extend(conversation_history)
+            print(f"   📜 Including {len(conversation_history)} previous messages (session only)")
+        
+        # Add current user message with inline base64 if image
+        if screenshot_path:
+            image_base64 = encode_image_to_base64(screenshot_path)
+            messages.append({
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": query_text},
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}}
+                ]
+            })
+            print(f"   📸 Included screenshot")
+        else:
+            messages.append({
+                "role": "user",
+                "content": query_text
+            })
+        
+        # Prepare the API request to TotalGPT
+        headers = {
+            "Authorization": f"Bearer {TOTALGPT_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": model_to_use,
+            "messages": messages,
+            "stream": False,
+            "temperature": 0.7,
+            "max_tokens": 2000
+        }
+        
+        # Send request to TotalGPT API
+        url = "https://api.totalgpt.ai/v1/chat/completions"
+        print(f"   Using model: {model_to_use}")
+        
+        if DASHBOARD:
+            DASHBOARD.set_processing_step("Querying TotalGPT API", 70)
+        
+        with httpx.Client(timeout=180.0) as client:
+            response = client.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+        
+        result = response.json()
+        print("Model response received")
+        
+        # Extract response content
+        if 'choices' in result and len(result['choices']) > 0:
+            content = result['choices'][0]['message']['content']
+        else:
+            content = ""
+        
+        # Return simplified result (compatible with display_response)
+        return {
+            "content": content,
+            "_query_text": query_text,
+            "_has_screenshot": screenshot_path is not None,
+            "_standalone_mode": True
+        }
+        
+    except httpx.HTTPStatusError as e:
+        error_msg = f"TotalGPT API Error {e.response.status_code}: {e.response.text}"
+        print(error_msg)
+        if DASHBOARD:
+            DASHBOARD.update_stats(last_error=error_msg)
+            DASHBOARD.add_debug_log(error_msg, "error")
+        return None
+    except httpx.RequestError as e:
+        error_msg = f"Request Error: {e}"
+        print(error_msg)
+        if DASHBOARD:
+            DASHBOARD.update_stats(last_error=error_msg)
+        return None
+    except Exception as e:
+        error_msg = f"Error querying TotalGPT: {e}"
+        print(error_msg)
+        if DASHBOARD:
+            DASHBOARD.update_stats(last_error=error_msg)
+        return None
+
+
+def cancel_tts():
+    """Cancel currently playing TTS audio."""
+    global TTS_PROCESS, DASHBOARD
+    
+    if TTS_PROCESS and TTS_PROCESS.poll() is None:
+        # Process is still running
+        try:
+            TTS_PROCESS.terminate()
+            TTS_PROCESS.wait(timeout=1.0)
+            print("\n🔇 TTS cancelled")
+            if DASHBOARD:
+                DASHBOARD.add_debug_log("TTS cancelled by user", "warning")
+            play_beep(frequency=600, duration=0.1)
+            return True
+        except Exception as e:
+            print(f"Error cancelling TTS: {e}")
+            return False
+    else:
+        print("\n⚠️  No TTS currently playing")
+        return False
+
+
 def text_to_speech(text: str) -> Optional[str]:
     """Convert text to speech using TotalGPT API and play it."""
+    global DASHBOARD
+    
     try:
-        if not USE_TTS or not TOTALGPT_API_KEY:
+        if not USE_TTS:
+            if DASHBOARD:
+                DASHBOARD.add_debug_log("TTS disabled in config", "warning")
             return None
             
-        print("🔊 Converting response to speech...")
+        if not TOTALGPT_API_KEY:
+            print("⚠️  TTS enabled but TOTALGPT_API_KEY not set!")
+            if DASHBOARD:
+                DASHBOARD.add_debug_log("TTS: API key missing", "error")
+            return None
+        
+        print(f"🔊 Converting response to speech... (length: {len(text)} chars)")
+        if DASHBOARD:
+            DASHBOARD.add_debug_log(f"TTS: Converting {len(text)} chars", "info")
         
         headers = {
             "Authorization": f"Bearer {TOTALGPT_API_KEY}",
@@ -1045,6 +1331,9 @@ def text_to_speech(text: str) -> Optional[str]:
             "lang_code": TTS_LANG_CODE
         }
         
+        if DASHBOARD:
+            DASHBOARD.add_debug_log("TTS: Sending to TotalGPT API", "info")
+        
         with httpx.Client(timeout=30.0) as client:
             response = client.post(
                 "https://api.totalgpt.ai/v1/audio/speech",
@@ -1053,6 +1342,9 @@ def text_to_speech(text: str) -> Optional[str]:
             )
             response.raise_for_status()
         
+        if DASHBOARD:
+            DASHBOARD.add_debug_log(f"TTS: Received {len(response.content)} bytes", "success")
+        
         # Save audio to temp file
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         audio_path = Path(f"/tmp/biobot_tts_{timestamp}.mp3")
@@ -1060,27 +1352,112 @@ def text_to_speech(text: str) -> Optional[str]:
         with open(audio_path, "wb") as f:
             f.write(response.content)
         
-        print("Speech generated, playing...")
+        print(f"Speech generated, playing... ({audio_path})")
+        print(f"💡 Double-click Right Cmd to cancel TTS")
+        if DASHBOARD:
+            DASHBOARD.add_debug_log("TTS: Playing audio (double-click cmd_r to cancel)", "info")
         
-        # Play audio using afplay (macOS built-in)
-        subprocess.run(["afplay", str(audio_path)], check=True)
+        # Play audio using afplay (macOS built-in) - save process for cancellation
+        global TTS_PROCESS
+        TTS_PROCESS = subprocess.Popen(["afplay", str(audio_path)])
         
-        # Clean up
-        audio_path.unlink()
-        print("Speech playback complete")
+        # Wait for completion or cancellation
+        try:
+            TTS_PROCESS.wait()
+            print("Speech playback complete")
+            if DASHBOARD:
+                DASHBOARD.add_debug_log("TTS: Playback complete", "success")
+        except:
+            print("Speech playback cancelled")
+            if DASHBOARD:
+                DASHBOARD.add_debug_log("TTS: Cancelled", "warning")
+        finally:
+            TTS_PROCESS = None
+            # Clean up
+            try:
+                audio_path.unlink()
+            except:
+                pass
         
         return str(audio_path)
         
     except httpx.HTTPStatusError as e:
-        print(f"TTS API Error {e.response.status_code}: {e.response.text}")
+        error_msg = f"TTS API Error {e.response.status_code}: {e.response.text}"
+        print(error_msg)
+        if DASHBOARD:
+            DASHBOARD.add_debug_log(error_msg, "error")
         return None
     except Exception as e:
-        print(f"TTS Error: {e}")
+        error_msg = f"TTS Error: {e}"
+        print(error_msg)
+        if DASHBOARD:
+            DASHBOARD.add_debug_log(error_msg, "error")
         return None
+
+
+def extract_summary(content: str) -> str:
+    """Extract only the SUMMARY portion from the response for TTS.
+    
+    The model is prompted to format responses as:
+    SUMMARY: [brief answer]
+    DETAILED EXPLANATION: [long answer]
+    
+    This function extracts just the SUMMARY part.
+    """
+    global DASHBOARD
+    
+    try:
+        print(f"[extract_summary] Content length: {len(content)} chars")
+        print(f"[extract_summary] Looking for 'SUMMARY:' in content...")
+        
+        # Look for "SUMMARY:" marker
+        if "SUMMARY:" in content:
+            print(f"[extract_summary] Found 'SUMMARY:' marker!")
+            # Extract from SUMMARY: to DETAILED EXPLANATION: (or end if not found)
+            summary_start = content.find("SUMMARY:") + len("SUMMARY:")
+            
+            # Find where detailed explanation starts
+            detail_markers = ["DETAILED EXPLANATION:", "EXPLANATION:", "DETAILS:", "\n\n"]
+            detail_start = len(content)  # Default to end
+            
+            for marker in detail_markers:
+                idx = content.find(marker, summary_start)
+                if idx != -1:
+                    detail_start = min(detail_start, idx)
+            
+            summary = content[summary_start:detail_start].strip()
+            print(f"[extract_summary] Extracted summary: {summary[:100]}...")
+            if DASHBOARD:
+                DASHBOARD.add_debug_log(f"Extracted summary: {len(summary)} chars", "success")
+            return summary
+        
+        # Fallback: If no SUMMARY marker, take first paragraph
+        print(f"[extract_summary] No 'SUMMARY:' found, using first paragraph")
+        if DASHBOARD:
+            DASHBOARD.add_debug_log("No SUMMARY marker, using fallback", "warning")
+        
+        paragraphs = content.split("\n\n")
+        if paragraphs:
+            fallback = paragraphs[0].strip()
+            print(f"[extract_summary] Using first paragraph: {fallback[:100]}...")
+            return fallback
+        
+        # Last resort: first 3 sentences
+        print(f"[extract_summary] Using first 3 sentences fallback")
+        sentences = content.split(". ")
+        return ". ".join(sentences[:3]) + "." if len(sentences) > 3 else content
+        
+    except Exception as e:
+        print(f"Error extracting summary: {e}")
+        if DASHBOARD:
+            DASHBOARD.add_debug_log(f"Error extracting summary: {e}", "error")
+        return content[:500]  # Fallback to first 500 chars
 
 
 def display_response(response: Dict[str, Any]):
-    """Display the response from model."""
+    """Display the response from model and optionally read summary via TTS."""
+    global DASHBOARD
+    
     try:
         # Extract content (simplified structure)
         content = response.get('content', '')
@@ -1092,9 +1469,24 @@ def display_response(response: Dict[str, Any]):
             print(content)
             print("="*60)
             
-            # Text-to-speech if enabled
+            # Text-to-speech: Only read the SUMMARY portion
             if USE_TTS:
-                text_to_speech(content)
+                print(f"\n🔊 TTS is enabled, extracting summary...")
+                if DASHBOARD:
+                    DASHBOARD.add_debug_log("TTS enabled, extracting summary", "info")
+                
+                summary = extract_summary(content)
+                print(f"📝 Summary extracted ({len(summary)} chars): {summary[:100]}...")
+                
+                if DASHBOARD:
+                    DASHBOARD.add_debug_log(f"Summary: {summary[:50]}...", "info")
+                
+                print(f"\n🔊 Reading summary aloud...")
+                text_to_speech(summary)
+            else:
+                print("\n⚠️  TTS is disabled (USE_TTS = False)")
+                if DASHBOARD:
+                    DASHBOARD.add_debug_log("TTS disabled in config", "warning")
         else:
             print("No content in response")
             
@@ -1109,13 +1501,11 @@ TOTALGPT_URL = "https://api.totalgpt.ai/v1/chat/completions"
 COMMAND_LIST = [
     "set system prompt",
     "new chat",
-    "delete last",
-    "repeat message",
-    "edit message",
-    "retake screenshot",
-    "enable knowledge base",
-    "disable knowledge base",
-    # Add more as needed
+    "change knowledge base",
+    "list knowledge bases",
+    # Future commands:
+    # "enable knowledge base",
+    # "disable knowledge base",
 ]
 
 def classify_or_enhance_transcript(transcript: str, context: Optional[str] = None) -> Dict[str, Any]:
@@ -1177,30 +1567,106 @@ def classify_or_enhance_transcript(transcript: str, context: Optional[str] = Non
 def handle_voice_command(command: str, arg: Optional[str] = None):
     """Route recognized command to the correct function."""
     global SYSTEM_PROMPT, DASHBOARD, CURRENT_CHAT_ID, CONVERSATION_HISTORY
+    global CURRENT_KNOWLEDGE_BASE_ID, CURRENT_KNOWLEDGE_BASE_NAME
     
     cmd = command.lower().strip()
     
-    if cmd.startswith("set system prompt"):
+    if cmd == "list knowledge bases":
+        if not USE_OPENWEBUI:
+            print("\n⚠️  Knowledge bases are only available in OpenWebUI mode")
+            print("   Set USE_OPENWEBUI = True in config.py to enable")
+            play_beep(frequency=300, duration=0.3)
+            return
+        
         print("\n" + "="*60)
-        print("🎤 COMANDO: Set System Prompt")
+        print("📚 COMMAND: List Knowledge Bases")
         print("="*60)
         
-        # Configurar system prompt
+        kb_list = list_knowledge_bases()
+        
+        if kb_list:
+            print(f"\n✅ Found {len(kb_list)} knowledge bases:")
+            for i, kb in enumerate(kb_list, 1):
+                kb_id = kb.get("id", "unknown")
+                kb_name = kb.get("name", "Unnamed")
+                kb_desc = kb.get("description", "No description")
+                active = " [ACTIVE]" if kb_id == CURRENT_KNOWLEDGE_BASE_ID else ""
+                print(f"\n   {i}. {kb_name}{active}")
+                print(f"      ID: {kb_id}")
+                print(f"      Description: {kb_desc}")
+        else:
+            print("\n⚠️  No knowledge bases found")
+        
+        print("="*60 + "\n")
+        
+        if DASHBOARD:
+            DASHBOARD.update_stats(mode="Listed KBs")
+        play_beep(frequency=800, duration=0.1)
+    
+    elif cmd.startswith("change knowledge base"):
+        if not USE_OPENWEBUI:
+            print("\n⚠️  Knowledge bases are only available in OpenWebUI mode")
+            print("   Set USE_OPENWEBUI = True in config.py to enable")
+            play_beep(frequency=300, duration=0.3)
+            return
+        
+        print("\n" + "="*60)
+        print("📚 COMMAND: Change Knowledge Base")
+        print("="*60)
+        
+        if arg:
+            # arg should be the KB name or ID
+            kb_list = list_knowledge_bases()
+            
+            # Try to find by name (case insensitive) or ID
+            target_kb = None
+            for kb in kb_list:
+                if (arg.lower() in kb.get("name", "").lower() or 
+                    arg == kb.get("id", "")):
+                    target_kb = kb
+                    break
+            
+            if target_kb:
+                set_knowledge_base(target_kb["id"], target_kb["name"])
+                print(f"\n✅ Knowledge base changed to: {target_kb['name']}")
+                play_beep(frequency=1000, duration=0.1)
+                time.sleep(0.1)
+                play_beep(frequency=1200, duration=0.1)
+            else:
+                print(f"\n⚠️  Knowledge base not found: {arg}")
+                print("   Use 'list knowledge bases' to see available options")
+                play_beep(frequency=300, duration=0.3)
+        else:
+            print("⚠️  No knowledge base specified")
+            print("   Example: 'change knowledge base datacenter docs'")
+            play_beep(frequency=300, duration=0.3)
+        
+        print("="*60 + "\n")
+        
+        if DASHBOARD:
+            DASHBOARD.update_stats(mode="KB changed" if target_kb else "KB change failed")
+    
+    elif cmd.startswith("set system prompt"):
+        print("\n" + "="*60)
+        print("🎤 COMMAND: Set System Prompt")
+        print("="*60)
+        
+        # Configure system prompt
         if arg:
             new_prompt = arg.strip()
             
             if DASHBOARD:
-                DASHBOARD.add_debug_log(f"ANTES: SYSTEM_PROMPT = '{SYSTEM_PROMPT}'", "info")
-                DASHBOARD.add_debug_log(f"Asignando: '{new_prompt}'", "info")
+                DASHBOARD.add_debug_log(f"BEFORE: SYSTEM_PROMPT = '{SYSTEM_PROMPT}'", "info")
+                DASHBOARD.add_debug_log(f"Assigning: '{new_prompt}'", "info")
             
             SYSTEM_PROMPT = new_prompt
             
             if DASHBOARD:
-                DASHBOARD.add_debug_log(f"DESPUÉS: SYSTEM_PROMPT = '{SYSTEM_PROMPT}'", "success")
+                DASHBOARD.add_debug_log(f"AFTER: SYSTEM_PROMPT = '{SYSTEM_PROMPT}'", "success")
             
-            print(f"\n✅ System prompt configurado:")
+            print(f"\n✅ System prompt configured:")
             print(f"   '{new_prompt}'")
-            print(f"\n💡 El system prompt se aplicará automáticamente en cada mensaje")
+            print(f"\n💡 System prompt will be applied automatically to each message")
             
             play_beep(frequency=1000, duration=0.1)
             time.sleep(0.1)
@@ -1212,26 +1678,25 @@ def handle_voice_command(command: str, arg: Optional[str] = None):
                     system_prompt=new_prompt
                 )
         else:
-            print("⚠️  No se proporcionó texto para el system prompt")
-            print("   Ejemplo: 'set system prompt: eres un experto en datacenters'")
+            print("⚠️  No text provided for system prompt")
+            print("   Example: 'set system prompt: you are an expert in datacenters'")
             play_beep(frequency=300, duration=0.3)
         
         print("="*60 + "\n")
     
     elif cmd == "new chat":
+        print("\n" + "="*60)
+        print("COMMAND: New Chat")
+        print("="*60)
         create_new_chat()
-        print("✅ Nuevo chat creado")
+        print("Chat reset successfully")
+        print("="*60 + "\n")
         if DASHBOARD:
             DASHBOARD.update_stats(mode="New chat created")
-    
-    elif cmd == "delete last":
-        delete_last_message()
-        print("✅ Último mensaje eliminado")
-        if DASHBOARD:
-            DASHBOARD.update_stats(mode="Last message deleted")
+        play_beep(frequency=1000, duration=0.1)
     
     else:
-        print(f"⚠️  Comando no reconocido: {command}")
+        print(f"⚠️  Command not recognized: {command}")
         if DASHBOARD:
             DASHBOARD.update_stats(mode="Unknown command")
 
@@ -1242,36 +1707,52 @@ CONVERSATION_HISTORY = []  # Text-only for API calls to avoid huge payloads
 CURRENT_CHAT_ID = None  # Open WebUI chat ID for frontend display
 MODIFIER_KEYS_PRESSED = set()  # Track which modifier keys are currently pressed
 TRIGGER_KEYS_PRESSED = set()  # Track which trigger keys are currently pressed
-SYSTEM_PROMPT = None  # Optional system prompt for chats
+SYSTEM_PROMPT = None  # Optional custom system prompt (appends to BASE_SYSTEM_PROMPT)
+CURRENT_KNOWLEDGE_BASE_ID = None  # Currently selected knowledge base ID
+CURRENT_KNOWLEDGE_BASE_NAME = None  # Currently selected knowledge base name
 
-# System prompt presets
+# TTS cancellation support
+TTS_PROCESS = None  # Current TTS subprocess (afplay)
+LAST_CMD_R_PRESS_TIME = 0  # For double-click detection
+DOUBLE_CLICK_THRESHOLD = 0.5  # seconds
+
+# Base system prompt - ALWAYS included with all models
+BASE_SYSTEM_PROMPT = """Structure your response in two parts:
+
+1. SUMMARY: Start with a brief, clear summary (2-3 sentences max) that directly answers the question. This will be read aloud via text-to-speech.
+
+2. DETAILED EXPLANATION: After the summary, provide your detailed reasoning, technical details, and comprehensive explanation in a separate paragraph.
+
+Format example:
+SUMMARY: [Your concise answer here]
+
+DETAILED EXPLANATION:
+[Your comprehensive response here with all technical details and reasoning]"""
+
+# System prompt presets (these get appended to BASE_SYSTEM_PROMPT)
 SYSTEM_PROMPT_PRESETS = {
-    "datacenter": "You are an expert datacenter technician assistant. Provide concise, technical answers about server hardware, networking, troubleshooting, and datacenter operations. Be direct and actionable.",
-    "debug": "You are a helpful assistant that provides detailed, step-by-step explanations. Break down complex topics into simple terms and verify understanding at each step.",
-    "brief": "You are a concise visual assistant for smart glasses. Respond briefly and directly. Keep answers under 3 sentences unless more detail is explicitly requested.",
+    "datacenter": "You are an expert datacenter technician assistant. Focus on server hardware, networking, troubleshooting, and datacenter operations.",
+    "debug": "You are a debugging assistant. Provide step-by-step explanations and break down complex topics into simple terms.",
+    "brief": "Keep all responses extremely concise. Prioritize brevity in both summary and explanation.",
     "general": "You are a helpful AI assistant. Provide balanced, informative responses."
 }
 
 
-def delete_last_message():
-    """Delete the last message from conversation history."""
-    global CONVERSATION_HISTORY, DASHBOARD
-    
-    if len(CONVERSATION_HISTORY) >= 2:
-        CONVERSATION_HISTORY = CONVERSATION_HISTORY[:-2]
-        if DASHBOARD:
-            DASHBOARD.update_stats(messages_sent=max(0, DASHBOARD.stats["messages_sent"] - 1))
-        play_beep(frequency=600, duration=0.1)
-    else:
-        play_beep(frequency=300, duration=0.2)
 
 
 def create_new_chat():
     """Create a new chat (reset conversation)."""
     global CONVERSATION_HISTORY, CURRENT_CHAT_ID, DASHBOARD
     
+    old_chat_id = CURRENT_CHAT_ID
+    old_messages = len(CONVERSATION_HISTORY) // 2
+    
     CONVERSATION_HISTORY = []
     CURRENT_CHAT_ID = None
+    
+    print(f"Cleared {old_messages} messages from conversation")
+    if old_chat_id:
+        print(f"Previous chat: {old_chat_id[:12]}...")
     
     if DASHBOARD:
         DASHBOARD.update_stats(
@@ -1280,6 +1761,7 @@ def create_new_chat():
             last_transcript="",
             last_response=""
         )
+        DASHBOARD.add_debug_log(f"New chat created ({old_messages} msgs cleared)", "success")
     
     play_beep(frequency=1000, duration=0.1)
 
@@ -1428,20 +1910,67 @@ def process_query(audio_path: str, capture_screenshot_flag: bool, use_region_sel
             return
 
         # Detectar comando "new chat"
-        if any(phrase in transcript_lower for phrase in ["new chat", "start new chat", "reset chat"]):
+        if any(phrase in transcript_lower for phrase in ["new chat", "start new chat", "reset chat", "create new chat"]):
             print(f"[Command] Detected: new chat")
+            print(f"[Transcript] '{message_text}'")
+            
+            if DASHBOARD:
+                DASHBOARD.add_debug_log("Command: new chat", "info")
+                DASHBOARD.update_stats(mode="Executing: new chat")
+            
             handle_voice_command("new chat")
+            
             if DASHBOARD:
                 DASHBOARD.update_stats(mode="Idle")
+                DASHBOARD.add_debug_log("New chat created", "success")
+            
             return
 
-        # Detectar comando "delete last"
-        if any(phrase in transcript_lower for phrase in ["delete last", "remove last", "undo last"]):
-            print(f"[Command] Detected: delete last")
-            handle_voice_command("delete last")
+        # Detectar comando "list knowledge bases"
+        if any(phrase in transcript_lower for phrase in ["list knowledge bases", "show knowledge bases", "list knowledge base"]):
+            print(f"[Command] Detected: list knowledge bases")
+            print(f"[Transcript] '{message_text}'")
+            
+            if DASHBOARD:
+                DASHBOARD.add_debug_log("Command: list knowledge bases", "info")
+                DASHBOARD.update_stats(mode="Executing: list KBs")
+            
+            handle_voice_command("list knowledge bases")
+            
             if DASHBOARD:
                 DASHBOARD.update_stats(mode="Idle")
+            
             return
+
+        # Detectar comando "change knowledge base"
+        if any(phrase in transcript_lower for phrase in ["change knowledge base", "switch knowledge base", "use knowledge base"]):
+            print(f"[Command] Detected: change knowledge base")
+            print(f"[Transcript] '{message_text}'")
+            
+            # Extract the KB name from the transcript
+            # Pattern: "change knowledge base [to] <name>"
+            kb_name = None
+            for trigger in ["change knowledge base", "switch knowledge base", "use knowledge base"]:
+                if trigger in transcript_lower:
+                    parts = transcript_lower.split(trigger, 1)
+                    if len(parts) > 1:
+                        kb_name = parts[1].strip()
+                        # Remove common filler words
+                        kb_name = kb_name.replace(" to ", "").strip()
+                        break
+            
+            if DASHBOARD:
+                DASHBOARD.add_debug_log(f"Command: change KB to '{kb_name}'", "info")
+                DASHBOARD.update_stats(mode="Executing: change KB")
+            
+            handle_voice_command("change knowledge base", kb_name)
+            
+            if DASHBOARD:
+                DASHBOARD.update_stats(mode="Idle")
+            
+            return
+
+        # Note: "delete last" command removed - not working reliably
 
         # No es comando - continuar con query normal
         print(f"[Query] Processing: {message_text}")
@@ -1461,33 +1990,44 @@ def process_query(audio_path: str, capture_screenshot_flag: bool, use_region_sel
         else:
             print("Skipping screenshot (audio-only mode)")
         
-        # Step 3: Create chat on first message
-        if CURRENT_CHAT_ID is None:
-            if DASHBOARD:
-                DASHBOARD.update_stats(mode="Creating chat...")
-            CURRENT_CHAT_ID = create_chat_in_openwebui(DEFAULT_MODEL, SYSTEM_PROMPT)
-            if not CURRENT_CHAT_ID:
-                print("Could not create chat")
+        # Step 3: Query model - Different path for OpenWebUI vs Standalone mode
+        if USE_OPENWEBUI:
+            # OpenWebUI Mode: Full featured with persistence
+            # Step 3a: Create chat on first message
+            if CURRENT_CHAT_ID is None:
                 if DASHBOARD:
-                    DASHBOARD.update_stats(mode="Idle")
-                return
+                    DASHBOARD.update_stats(mode="Creating chat...")
+                CURRENT_CHAT_ID = create_chat_in_openwebui(DEFAULT_MODEL, SYSTEM_PROMPT)
+                if not CURRENT_CHAT_ID:
+                    print("Could not create chat")
+                    if DASHBOARD:
+                        DASHBOARD.update_stats(mode="Idle")
+                    return
+                if DASHBOARD:
+                    DASHBOARD.update_stats(current_chat_id=CURRENT_CHAT_ID)
+            
+            # Step 3b: Upload image if we have one
+            file_data = None
+            if screenshot_path:
+                if DASHBOARD:
+                    DASHBOARD.update_stats(mode="Uploading image...")
+                file_data = upload_image_to_openwebui(screenshot_path)
+                if not file_data:
+                    print("Image upload failed, continuing without image...")
+            
+            # Step 3c: Query OpenWebUI (inline base64 for quick response)
             if DASHBOARD:
-                DASHBOARD.update_stats(current_chat_id=CURRENT_CHAT_ID)
-        
-        # Step 4: Upload image if we have one
-        file_data = None
-        if screenshot_path:
+                DASHBOARD.update_stats(mode="Querying model...")
+            
+            response = query_openwebui(message_text, screenshot_path, CONVERSATION_HISTORY, None)
+        else:
+            # Standalone Mode: Direct TotalGPT API, no persistence
+            print("\n📦 Standalone mode: Using TotalGPT API directly")
             if DASHBOARD:
-                DASHBOARD.update_stats(mode="Uploading image...")
-            file_data = upload_image_to_openwebui(screenshot_path)
-            if not file_data:
-                print("Image upload failed, continuing without image...")
-        
-        # Step 5: Query model (inline base64 for quick response)
-        if DASHBOARD:
-            DASHBOARD.update_stats(mode="Querying model...")
-        
-        response = query_openwebui(message_text, screenshot_path, CONVERSATION_HISTORY, None)
+                DASHBOARD.update_stats(mode="Querying model (standalone)...")
+                DASHBOARD.add_debug_log("Standalone mode active", "info")
+            
+            response = query_standalone(message_text, screenshot_path, CONVERSATION_HISTORY)
         
         if not response:
             print("No response from model")
@@ -1513,18 +2053,22 @@ def process_query(audio_path: str, capture_screenshot_flag: bool, use_region_sel
             
             # Update dashboard with response
             if DASHBOARD:
+                messages_count = DASHBOARD.stats["messages_sent"] + 1
                 DASHBOARD.update_stats(
                     last_response=assistant_message,
-                    messages_sent=DASHBOARD.stats["messages_sent"] + 1,
-                    mode="Saving to chat..."
+                    messages_sent=messages_count
                 )
             
-            # Save to chat with attachments
-            add_message_to_chat(CURRENT_CHAT_ID, message_text, assistant_message, file_data)
+            # Save to chat with attachments (OpenWebUI mode only)
+            if USE_OPENWEBUI:
+                if DASHBOARD:
+                    DASHBOARD.update_stats(mode="Saving to chat...")
+                add_message_to_chat(CURRENT_CHAT_ID, message_text, assistant_message, file_data if screenshot_path else None)
+            
             play_submit_beep()  # Audio confirmation that message was submitted
         
-        # Step 6: Display the response (optional - dashboard shows it)
-        # display_response(response)
+        # Step 6: Display the response and play TTS if enabled
+        display_response(response)
         
         # Update dashboard: Ready
         if DASHBOARD:
@@ -1627,6 +2171,7 @@ def check_key_match(key, trigger_key_str, trigger_map=None):
 def on_press(key, recorder, trigger_key_screenshot=None, trigger_key_audio=None):
     """Handle key press events - start recording."""
     global MODIFIER_KEYS_PRESSED, TRIGGER_KEYS_PRESSED, CONVERSATION_HISTORY, CURRENT_CHAT_ID, DASHBOARD
+    global LAST_CMD_R_PRESS_TIME, DOUBLE_CLICK_THRESHOLD
     
     # Use config defaults if not provided
     key1 = trigger_key_screenshot or TRIGGER_KEY_WITH_SCREENSHOT
@@ -1683,10 +2228,24 @@ def on_press(key, recorder, trigger_key_screenshot=None, trigger_key_audio=None)
 
         # ========== KEY 1 COMBINATIONS (Screenshot + Audio) ==========
         if is_key1:
-            # Ctrl + Key1 = Delete last message
-            if 'ctrl' in MODIFIER_KEYS_PRESSED:
-                delete_last_message()
-                return
+            # Check for double-click on cmd_r to cancel TTS
+            current_time = time.time()
+            if key1 == 'cmd_r' and key == Key.cmd_r:
+                time_since_last = current_time - LAST_CMD_R_PRESS_TIME
+                if time_since_last < DOUBLE_CLICK_THRESHOLD:
+                    # Double click detected - cancel TTS
+                    print(f"\n[Double Click Detected] Cancelling TTS...")
+                    cancel_tts()
+                    LAST_CMD_R_PRESS_TIME = 0  # Reset
+                    return
+                else:
+                    # First click - update timestamp
+                    LAST_CMD_R_PRESS_TIME = current_time
+            
+            # Ctrl + Key1 = Reserved for future use
+            # if 'ctrl' in MODIFIER_KEYS_PRESSED:
+            #     # Future feature
+            #     return
 
             # Alt + Key1 = Create new chat
             if 'alt' in MODIFIER_KEYS_PRESSED:
@@ -2027,24 +2586,81 @@ def main():
         trigger_key_audio = TRIGGER_KEY_AUDIO_ONLY
     
     # Update dashboard with initial config
+    operation_mode = "OpenWebUI" if USE_OPENWEBUI else "Standalone"
+    model_display = DEFAULT_MODEL if USE_OPENWEBUI else STANDALONE_MODEL
+    
     DASHBOARD.update_stats(
-        openwebui_url=OPENWEBUI_URL,
+        openwebui_url=f"📦 {operation_mode} Mode",
         stt_service="Local Whisper" if USE_LOCAL_WHISPER else ("Groq" if USE_GROQ_STT else "OpenAI"),
         tts_enabled=USE_TTS,
-        current_model=DEFAULT_MODEL
+        current_model=model_display
     )
     
-    # Test Open WebUI connection
-    try:
-        with httpx.Client(timeout=10.0) as client:
-            headers = {"Authorization": f"Bearer {OPENWEBUI_TOKEN}"}
-            response = client.get(f"{OPENWEBUI_URL}/api/config", headers=headers)
-            response.raise_for_status()
-            DASHBOARD.update_stats(openwebui_url=f"✓ {OPENWEBUI_URL}")
-    except Exception as e:
-        DASHBOARD.update_stats(openwebui_url=f"✗ {OPENWEBUI_URL}")
-        print(f"Could not connect to Open WebUI: {e}")
-        exit(1)
+    print(f"\n{'='*60}")
+    print(f"OPERATION MODE: {operation_mode}")
+    print(f"{'='*60}")
+    
+    if USE_OPENWEBUI:
+        # OpenWebUI Mode: Test connection and setup knowledge base
+        print(f"Connecting to OpenWebUI at {OPENWEBUI_URL}...")
+        
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                headers = {"Authorization": f"Bearer {OPENWEBUI_TOKEN}"}
+                response = client.get(f"{OPENWEBUI_URL}/api/config", headers=headers)
+                response.raise_for_status()
+                DASHBOARD.update_stats(openwebui_url=f"✓ {OPENWEBUI_URL}")
+                print(f"✅ Connected to OpenWebUI successfully")
+        except Exception as e:
+            DASHBOARD.update_stats(openwebui_url=f"✗ {OPENWEBUI_URL}")
+            print(f"❌ Could not connect to Open WebUI: {e}")
+            print(f"\n💡 Tip: Set USE_OPENWEBUI = False in config.py for standalone mode")
+            exit(1)
+        
+        # Initialize knowledge base if configured in config.py
+        if KNOWLEDGE_ID:
+            print(f"\n🔄 Initializing knowledge base from config...")
+            
+            # Check if KNOWLEDGE_ID looks like a UUID (contains dashes) or a name
+            if "-" in KNOWLEDGE_ID and len(KNOWLEDGE_ID) > 30:
+                # It's likely a UUID, try to get it directly
+                kb_details = get_knowledge_base_by_id(KNOWLEDGE_ID)
+                if kb_details:
+                    kb_name = kb_details.get("name", "Unknown")
+                    set_knowledge_base(KNOWLEDGE_ID, kb_name)
+                    print(f"✅ Knowledge base loaded: {kb_name}")
+                else:
+                    print(f"⚠️  Could not load knowledge base {KNOWLEDGE_ID}")
+                    print("   You can change it later with 'change knowledge base' command")
+            else:
+                # It's a name, search for it in the list
+                print(f"   Searching for knowledge base named: {KNOWLEDGE_ID}")
+                kb_list = list_knowledge_bases()
+                
+                target_kb = None
+                for kb in kb_list:
+                    if KNOWLEDGE_ID.lower() in kb.get("name", "").lower():
+                        target_kb = kb
+                        break
+                
+                if target_kb:
+                    set_knowledge_base(target_kb["id"], target_kb["name"])
+                    print(f"✅ Knowledge base loaded: {target_kb['name']} (ID: {target_kb['id'][:12]}...)")
+                else:
+                    print(f"⚠️  Could not find knowledge base matching: {KNOWLEDGE_ID}")
+                    print(f"   Available knowledge bases:")
+                    for kb in kb_list:
+                        print(f"      - {kb.get('name', 'Unnamed')}")
+                    print("   You can change it later with 'change knowledge base' command")
+    else:
+        # Standalone Mode: No OpenWebUI, using TotalGPT API directly
+        print(f"Using TotalGPT API directly (no OpenWebUI)")
+        print(f"Model: {STANDALONE_MODEL}")
+        print(f"Vision Model: {STANDALONE_VISION_MODEL}")
+        print(f"\n💡 Note: Standalone mode has no chat persistence or knowledge bases")
+        print(f"         Set USE_OPENWEBUI = True for full features")
+        
+        DASHBOARD.add_debug_log("Standalone mode active", "info")
     
     # Create audio recorder
     recorder = AudioRecorder()

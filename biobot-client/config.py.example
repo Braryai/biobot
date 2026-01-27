@@ -4,7 +4,17 @@
 # Copy this file to config.py and fill in your actual values
 
 # ============================================================================
-# Open WebUI Configuration
+# Operation Mode
+# ============================================================================
+# Choose operation mode:
+# - True (OpenWebUI): Full featured mode with OpenWebUI integration, chat persistence, 
+#                      knowledge bases, and conversation history
+# - False (Standalone): Lightweight mode using only TotalGPT API, no persistence,
+#                       ideal for quick questions without OpenWebUI setup
+USE_OPENWEBUI = True  # Set to False for standalone mode
+
+# ============================================================================
+# Open WebUI Configuration (only used if USE_OPENWEBUI = True)
 # ============================================================================
 # Open WebUI server URL (no trailing slash)
 OPENWEBUI_URL = "http://YOUR_SERVER_IP:PORT"
@@ -13,14 +23,29 @@ OPENWEBUI_URL = "http://YOUR_SERVER_IP:PORT"
 # Get from: Settings > Account > API Keys in Open WebUI
 OPENWEBUI_TOKEN = "your-openwebui-api-token-here"
 
-# Knowledge Base ID for RAG (optional but recommended for datacenter queries)
+# Knowledge Base ID or Name for RAG (optional but recommended for datacenter queries)
 # Get from: Workspace > Knowledge in Open WebUI
+# Can be either:
+#   - A UUID (e.g., "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+#   - A name (e.g., "network_configs" - will search for matching KB)
 # Leave as empty string "" if not using knowledge base
-KNOWLEDGE_ID = "your-knowledge-base-id-here"
+KNOWLEDGE_ID = ""
 
-# Default AI model to use
+# Default AI model to use (OpenWebUI mode)
 # This should match a model available in your Open WebUI instance
 DEFAULT_MODEL = "llama3.1:8b"
+
+# ============================================================================
+# Standalone Mode Configuration (only used if USE_OPENWEBUI = False)
+# ============================================================================
+# Model to use in standalone mode (via TotalGPT API)
+# Available models: Check https://api.totalgpt.ai/docs for current list
+# Examples: "Qwen-Qwen3-30B-A3B", "meta-llama/Meta-Llama-3.1-70B-Instruct", etc.
+STANDALONE_MODEL = "Qwen-Qwen3-30B-A3B"
+
+# Model for vision tasks in standalone mode (if using screenshots)
+# Must be a vision/multimodal model
+STANDALONE_VISION_MODEL = "meta-llama/Llama-3.2-11B-Vision-Instruct"
 
 # ============================================================================
 # Speech-to-Text Configuration (STT)
@@ -56,6 +81,8 @@ OPENAI_STT_MODEL = "whisper-1"
 # Text-to-Speech Configuration (TTS) - OPTIONAL
 # ============================================================================
 # Enable TTS to have BioBot speak responses back to you
+# When enabled, BioBot will read the SUMMARY portion of responses aloud
+# The full detailed response is still visible in the Open WebUI frontend
 USE_TTS = False
 
 # TotalGPT API Key for Text-to-Speech
@@ -63,11 +90,14 @@ USE_TTS = False
 TOTALGPT_API_KEY = "your_totalgpt_api_key_here"
 
 # TTS Voice Selection
-# Available voices: af_bella, af_nicole, af_sarah, af_sky, am_adam, am_michael, etc.
-# See: https://api.totalgpt.ai/docs for full voice list
+# Available voices: 
+#   Adult Female (AF): af_alloy, af_bella, af_heart, af_jessica, af_nicole, af_sarah
+#   British Male (BM): bm_lewis, bm_daniel, bm_george, bm_fable
+#   Child Voices: cf_laura, cm_aaron
 TTS_VOICE = "af_bella"
 
 # TTS Speed (0.1 to 4.0)
+# 1.0 = normal speed, <1.0 = slower, >1.0 = faster
 TTS_SPEED = 1.0
 
 # TTS Language Code

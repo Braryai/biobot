@@ -32,6 +32,7 @@ class BioBotDashboard:
             "last_transcript": "",
             "last_response": "",
             "system_prompt": None,
+            "knowledge_base": None,
             "processing_step": None,
             "processing_progress": 0,
             "debug_logs": [],  # ← NUEVO: Lista de logs de debug
@@ -151,10 +152,8 @@ class BioBotDashboard:
         commands = [
             ("set system prompt", "Configure AI behavior"),
             ("new chat", "Start a new conversation"),
-            ("delete last", "Remove last message"),
-            # Commented out - not yet implemented
-            # ("repeat", "Repeat last response"),
-            # ("retake screenshot", "Capture new screenshot"),
+            ("change knowledge base", "Switch knowledge base"),
+            ("list knowledge bases", "Show available KBs"),
         ]
         
         for cmd, desc in commands:
@@ -205,6 +204,10 @@ class BioBotDashboard:
             if len(self.stats["system_prompt"]) > 100:
                 prompt_preview += "..."
             content.append(f"   {prompt_preview}\n", style="dim white")
+        
+        if self.stats.get("knowledge_base"):
+            content.append("\n📚 KNOWLEDGE BASE:\n", style="cyan")
+            content.append(f"   {self.stats['knowledge_base']}\n", style="dim white")
         
         # Debug info
         content.append("\n" + "─" * 50 + "\n", style="dim white")
